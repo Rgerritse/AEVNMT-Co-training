@@ -9,7 +9,7 @@ LC=$SCRIPTS/tokenizer/lowercase.perl
 TTC=$SCRIPTS/recaser/train-truecaser.perl
 TC=$SCRIPTS/recaser/truecase.perl
 CLEAN=$SCRIPTS/training/clean-corpus-n.perl
-BPEROOT=subword-nmt
+BPEROOT=subword-nmt/subword_nmt
 BPE_TOKENS=32000
 ZIP=en-tr.txt.zip
 
@@ -38,10 +38,10 @@ tmp=$prep/tmp
 orig=orig
 
 mkdir -p $orig $tmp $prep
-
+#
 echo "Downloading data from ${URL}..."
 cd $orig
-wget "$URL" -O $ZIP # Comment out to download data
+wget "$URL" -O $ZIP
 
 if [ -f $ZIP ]; then
     echo "Data successfully downloaded."
@@ -52,7 +52,6 @@ fi
 
 unzip $ZIP
 cd ../..
-pwd
 
 python split_setimes.en-tr.py \
     --in_dir data/$orig/ \
@@ -68,23 +67,25 @@ python split_setimes.en-tr.py \
 
 cd data/
 
-echo "Tokenizing data..."
 for l in $src $tgt; do
   for d in train valid test; do
     f=$d.$l
     tok=$d.tok.$l
+    echo "Tokenizing $f..."
     perl $TOKENIZER -q -l $l -threads 8 < $tmp/$f > $tmp/$tok
   done
 done
 
-echo "Training truecase models"
+
 for l in $src $tgt; do
+  echo "Training $l truecase model..."
   perl $TTC --model $tmp/tc-model.$l --corpus $tmp/train.tok.$l
 done
 
-echo "Truecasing data..."
+
 for l in $src $tgt; do
   for d in train valid test; do
+    echo "Truecasing $tmp/$d.tok.$l"
     perl $TC --model $tmp/tc-model.$l < $tmp/$d.tok.$l > $tmp/$d.tc.$l
   done
 done
@@ -108,7 +109,11 @@ for L in $src $tgt; do
     done
 done
 
-echo "cleaning files"
+echo -e "<unk>\n<s>\n</s>" > $prep/vocab.bpe
+cat $tmp/train.bpe.$src $tmp/train.bpe.$tgt | \
+  $BPEROOT/get_vocab.py | cut -f1 -d ' ' >> $prep/vocab.bpe
+
 for d in train valid test; do
+  echo "Cleaning $tmp/$d.bpe.$src and $tmp/$d.bpe.$tgt"
   perl $CLEAN $tmp/$d.bpe $src $tgt $prep/$d 1 50
 done
