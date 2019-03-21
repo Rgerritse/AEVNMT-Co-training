@@ -2,6 +2,7 @@ from torch.utils.data import DataLoader
 from fairseq.data import Dictionary, LanguagePairDataset
 import argparse
 from tqdm import tqdm
+from models import AEVNMT, SentEmbInfModel
 
 def add_arguments(parser):
     # Input paths
@@ -9,6 +10,10 @@ def add_arguments(parser):
     parser.add_argument("--src_lang", type=str, default="en", help="Source language")
     parser.add_argument("--tgt_lang", type=str, default="tr", help="Target language")
     parser.add_argument("--vocab", type=str, default="data/setimes.tokenized.en-tr/vocab.bpe", help="File to vocabulary")
+
+    # Network parameters
+    parser.add_argument("--emb_dim", type=int, default=300, help="Dimensionality of BPE embeddings")
+    parser.add_argument("--hidden_dim", type=int, default=256, help="Dimensionality of hidden units")
 
 def get_vocab():
     vocab = Dictionary()
@@ -53,25 +58,35 @@ def load_dataset(dataset, vocab):
             tgt=tgt,
             tgt_sizes=src_lengths,
             tgt_dict=vocab,
-            # left_pad_source=False
         )
     return dataset
 
-def train(dataset):
-    dataloader = DataLoader(dataset, 4, collate_fn=dataset.collater)
-    for i, bla in enumerate(dataloader):
-        print("")
-        # if i == 0:
+def setup_model(vocab):
+    model = AEVNMT(
+        len(vocab),
+        FLAGS.emb_dim,
+        vocab.pad(),
+        FLAGS.hidden_dim
+    )
+    return model
+
+def train(dataset, model):
+    dataloader = DataLoader(dataset, 2, collate_fn=dataset.collater)
+    for i, batch in enumerate(dataloader):
+        if i < 2:
+            print("\ni:", i)
+            x = batch["net_input"]["src_tokens"]
+            out = model.forward(x)
+            # print(o)
             # print(bla["target"])
             # print(bla["net_input"].keys())
         # print(i.shape)
 
-
 def main():
     vocab = get_vocab()
-    # print(vocab.pad())
     dataset_train = load_dataset("train", vocab)
-    train(dataset_train)
+    model = setup_model(vocab)
+    train(dataset_train, model)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
