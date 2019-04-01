@@ -1,5 +1,6 @@
 import os
 import torch
+import time
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
@@ -12,7 +13,7 @@ class Trainer():
         self.num_epochs = num_epochs
         self.device = device
 
-    def run_epochs(self, padding_idx, vocab_size, batch_size):
+    def run_epochs(self, padding_idx, vocab_size, batch_size, batch_size_eval):
         dataloader = DataLoader(self.dataset_train, batch_size, collate_fn=self.dataset_train.collater)
         parameters = filter(lambda p: p.requires_grad, self.model.parameters())
         opt = torch.optim.Adam(parameters)
@@ -25,8 +26,11 @@ class Trainer():
             self.model.load_state_dict(state['state_dict'])
             opt.load_state_dict(state['optimizer'])
 
+        num_batches = len(dataloader)
         for epoch in range(saved_epoch, self.num_epochs):
+            start_time = time.time()
             for i, batch in enumerate(dataloader):
+                # start_time = time.time()
                 opt.zero_grad()
                 x = batch["net_input"]["src_tokens"].to(self.device)
                 y = batch["target"].to(self.device)
@@ -39,12 +43,17 @@ class Trainer():
                 loss.backward()
                 opt.step()
 
-                print("Epoch {}/{}, Batch {}/{} , Loss: {}".format(
+                avg_batch_spd = (time.time() - start_time)/(i+1)
+                batchs_remaining = num_batches-(i+1)
+                ETA = batchs_remaining * avg_batch_spd
+
+                print("Epoch {:02d}/{:02d}, Batch {:06d}/{:06d} , Loss: {:.2f}, ETA: {:.1f}s".format(
                     epoch +1,
                     self.num_epochs,
                     i + 1,
                     len(dataloader),
-                    loss.item())
+                    loss.item(),
+                    ETA)
                 )
 
             state = {
@@ -53,15 +62,16 @@ class Trainer():
                 'optimizer': opt.state_dict(),
             }
             torch.save(state, 'checkpoints/{}-{:02d}'.format(self.model_name, epoch + 1))
-            self.beam_search(self.model, self.dataset_valid, padding_idx)
+            self.beam_search(self.model, self.dataset_valid, padding_idx, batch_size_eval)
 
-    def beam_search(self, model, dataset, padding_idx):
+    def beam_search(self, model, dataset, padding_idx, batch_size):
         # dataloader = DataLoader(dataset, FLAGS.batch_size_eval, collate_fn=dataset.collater)
-        dataloader = DataLoader(dataset, 2, collate_fn=dataset.collater)
+        dataloader = DataLoader(dataset, batch_size_eval, collate_fn=dataset.collater)
         for i, batch in enumerate(dataloader):
             x = batch["net_input"]["src_tokens"].to(self.device)
             x_mask = (x != padding_idx).unsqueeze(-2)
             pred = self.model.predict(x, x_mask)
+            print(pred)
 
     def compute_loss(self, pre_out_x, pre_out_y, x, y, mu, sigma, vocab_size):
         x_stack = torch.stack(pre_out_x, 1).view(-1, vocab_size)

@@ -42,7 +42,7 @@ def main():
         FLAGS.num_epochs,
         FLAGS.device
     )
-    trainer.run_epochs(vocab.pad(), len(vocab), FLAGS.batch_size)
+    trainer.run_epochs(vocab.pad(), len(vocab), FLAGS.batch_size, FLAGS.batch_size_eval)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
