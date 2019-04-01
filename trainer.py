@@ -45,9 +45,9 @@ class Trainer():
 
                 avg_batch_spd = (time.time() - start_time)/(i+1)
                 batchs_remaining = num_batches-(i+1)
-                ETA = batchs_remaining * avg_batch_spd
+                ETA = (batchs_remaining * avg_batch_spd)/60
 
-                print("Epoch {:02d}/{:02d}, Batch {:06d}/{:06d} , Loss: {:.2f}, ETA: {:.1f}s".format(
+                print("Epoch {:02d}/{:02d}, Batch {:06d}/{:06d} , Loss: {:.2f}, ETA: {:.1f}m".format(
                     epoch +1,
                     self.num_epochs,
                     i + 1,
