@@ -5,7 +5,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 class Trainer():
-    def __init__(self, model, dataset_train, dataset_valid, model_name, num_epochs, device):
+    def __init__(self, vocab, model, dataset_train, dataset_valid, model_name, num_epochs, device):
+        self.vocab = vocab
         self.model = model
         self.dataset_train = dataset_train
         self.dataset_valid = dataset_valid
@@ -13,7 +14,7 @@ class Trainer():
         self.num_epochs = num_epochs
         self.device = device
 
-    def run_epochs(self, padding_idx, vocab_size, batch_size, batch_size_eval):
+    def run_epochs(self, padding_idx, vocab_size, batch_size, batch_size_eval, predictions_dir):
         dataloader = DataLoader(self.dataset_train, batch_size, collate_fn=self.dataset_train.collater)
         parameters = filter(lambda p: p.requires_grad, self.model.parameters())
         opt = torch.optim.Adam(parameters)
@@ -30,7 +31,6 @@ class Trainer():
         for epoch in range(saved_epoch, self.num_epochs):
             start_time = time.time()
             for i, batch in enumerate(dataloader):
-                # start_time = time.time()
                 opt.zero_grad()
                 x = batch["net_input"]["src_tokens"].to(self.device)
                 y = batch["target"].to(self.device)
@@ -62,16 +62,18 @@ class Trainer():
                 'optimizer': opt.state_dict(),
             }
             torch.save(state, 'checkpoints/{}-{:02d}'.format(self.model_name, epoch + 1))
-            self.beam_search(self.model, self.dataset_valid, padding_idx, batch_size_eval)
+            self.beam_search(self.model, self.dataset_valid, padding_idx, batch_size_eval, epoch + 1, predictions_dir)
 
-    def beam_search(self, model, dataset, padding_idx, batch_size):
-        # dataloader = DataLoader(dataset, FLAGS.batch_size_eval, collate_fn=dataset.collater)
+    def beam_search(self, model, dataset, padding_idx, batch_size_eval, epoch, predictions_dir):
         dataloader = DataLoader(dataset, batch_size_eval, collate_fn=dataset.collater)
         for i, batch in enumerate(dataloader):
             x = batch["net_input"]["src_tokens"].to(self.device)
             x_mask = (x != padding_idx).unsqueeze(-2)
             pred = self.model.predict(x, x_mask)
-            print(pred)
+            for i in range(pred.shape[0]):
+                decoded = self.vocab.string(pred[i])
+                with open('{}/{}-{}.txt'.format(predictions_dir, self.model_name, epoch), 'a') as the_file:
+                    the_file.write(decoded + '\n')
 
     def compute_loss(self, pre_out_x, pre_out_y, x, y, mu, sigma, vocab_size):
         x_stack = torch.stack(pre_out_x, 1).view(-1, vocab_size)

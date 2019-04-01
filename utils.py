@@ -9,31 +9,31 @@ def get_vocab(vocab_path):
             vocab.add_symbol(line.strip())
     return vocab
 
-def load_dataset(dataset, data_dir, src_lang, tgt_lang, vocab):
+def load_dataset(dataset, data_dir, src_lang, tgt_lang, vocab, num_sequences=None):
     print("Loading {} dataset".format(dataset))
     print("-- Reading source")
     src_path = "{}/{}.{}".format(data_dir, dataset, src_lang)
     src = []
     src_lengths = []
     with open(src_path, encoding='utf-8') as file:
-        for line in tqdm(file):
-        # for i, line in enumerate(file):
-            sentence = "<s> " + line.strip()
-            tokens = vocab.encode_line(sentence, add_if_not_exist=False)
-            src.append(tokens)
-            src_lengths.append(tokens.numel())
+        for i, line in enumerate(file):
+            if num_sequences == None or i < num_sequences:
+                sentence = "<s> " + line.strip()
+                tokens = vocab.encode_line(sentence, add_if_not_exist=False)
+                src.append(tokens)
+                src_lengths.append(tokens.numel())
 
     print("-- Reading target")
     tgt_path = "{}/{}.{}".format(data_dir, dataset, tgt_lang)
     tgt = []
     tgt_lengths = []
     with open(tgt_path, encoding='utf-8') as file:
-        for line in tqdm(file):
-        # for i, line in enumerate(file):
-            sentence = "<s> " + line.strip()
-            tokens = vocab.encode_line(sentence, add_if_not_exist=False)
-            tgt.append(tokens)
-            tgt_lengths.append(tokens.numel())
+        for i, line in enumerate(file):
+            if num_sequences == None or i < num_sequences:
+                sentence = line.strip() + "</s>"
+                tokens = vocab.encode_line(sentence, add_if_not_exist=False)
+                tgt.append(tokens)
+                tgt_lengths.append(tokens.numel())
 
     dataset = LanguagePairDataset(
             src=src,

@@ -101,6 +101,8 @@ class TransModel(nn.Module):
         self.device = device
 
     def forward(self, x, x_mask, z, y=None, max_len=None):
+        batch_size = x.shape[0]
+
         f = self.emb_x(x.long())
         bigru_x_h0 = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
         s, _ = self.rnn_bigru_x(f, bigru_x_h0)
@@ -114,10 +116,16 @@ class TransModel(nn.Module):
         pre_out = []
         for j in range(max_len):
             c_j, _ = self.attention(t[j].unsqueeze(1), proj_key, s, x_mask)
-            if self.train == True:
-                e_j = self.emb_y(torch.unsqueeze(y[:, j], 1).long())
+            if j == 0:
+                start_seq = torch.tensor([[self.sos_idx] for _ in range(batch_size)]).to(self.device)
+                e_j = self.emb_y(start_seq.long())
             else:
-                raise NotImplementedError
+                e_j = self.emb_y(torch.unsqueeze(y[:, j-1], 1).long())
+            # if self.train == True:
+                # print("y_j", torch.unsqueeze(y[:, j], 1).long())
+            #
+            # else:
+            #     raise NotImplementedError
 
             h0 = torch.cat((c_j, e_j), 2)
             t_j, _ = self.rnn_gru_dec(t[j].unsqueeze(1), torch.squeeze(h0).unsqueeze(0))
