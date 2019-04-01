@@ -1,5 +1,6 @@
 from fairseq.data import Dictionary, LanguagePairDataset
 from models import AEVNMT
+from tqdm import tqdm
 
 def get_vocab(vocab_path):
     vocab = Dictionary()

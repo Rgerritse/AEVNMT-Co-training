@@ -3,7 +3,6 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-
 class Trainer():
     def __init__(self, model, dataset_train, dataset_valid, model_name, num_epochs, device):
         self.model = model
