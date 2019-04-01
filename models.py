@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn
 from torch.distributions.normal import Normal
 import torch.nn.functional as F
+import copy
 
 class AEVNMT(nn.Module):
-    def __init__(self, vocab_size, emb_dim, padding_idx, hidden_dim, device, train=False, s_tensor=None):
+    def __init__(self, vocab_size, emb_dim, padding_idx, hidden_dim, max_len, device, train=False, sos_idx=None, eos_idx=None):
         super(AEVNMT, self).__init__()
 
         self.device = device
@@ -12,8 +13,9 @@ class AEVNMT(nn.Module):
         # Initialize parameters
         self.hidden_dim = hidden_dim
         self.emb_dim = emb_dim
+        self.max_len = max_len
 
-        # Initialize prior
+        # Initialize priors
         self.mu_prior = torch.tensor([0.0] * hidden_dim)
         self.sigma_prior = torch.tensor([1.0] * hidden_dim)
         self.normal = Normal(self.mu_prior, self.sigma_prior)
@@ -25,8 +27,8 @@ class AEVNMT(nn.Module):
 
         # Initialize models
         self.attention = BahdanauAttention(hidden_dim, query_size = 2 * hidden_dim + emb_dim)
-        self.source = SourceModel(self.emb_x, emb_dim, hidden_dim, vocab_size, train=train, s_tensor=s_tensor).to(device)
-        self.trans = TransModel(self.emb_x, self.emb_y, emb_dim, hidden_dim, vocab_size, self.attention, train=train, s_tensor=s_tensor).to(device)
+        self.source = SourceModel(self.emb_x, emb_dim, hidden_dim, vocab_size, train=train, sos_idx=sos_idx, eos_idx=eos_idx).to(device)
+        self.trans = TransModel(self.emb_x, self.emb_y, emb_dim, hidden_dim, vocab_size, self.attention, device, train=train, sos_idx=sos_idx, eos_idx=eos_idx).to(device)
         self.enc = SentEmbInfModel(self.emb_x, emb_dim, hidden_dim).to(device)
 
     def forward(self, x, x_mask, y=None, y_mask=None):
@@ -41,10 +43,17 @@ class AEVNMT(nn.Module):
 
         return pre_out_x, pre_out_y, mu_theta, sigma_theta
 
+    def predict(self, x, x_mask):
+        with torch.no_grad():
+            z, _ = self.enc.forward(x)
+            predictions = self.trans.greedy_decode(x, x_mask, z, self.max_len)
+            return predictions
+            # print(mu_theta.shape)
+
 class SourceModel(nn.Module):
-    def __init__(self, emb_x, emb_dim, hidden_dim, vocab_size, train=False, s_tensor=None):
+    def __init__(self, emb_x, emb_dim, hidden_dim, vocab_size, train=False, sos_idx=None, eos_idx=None):
         super(SourceModel, self).__init__()
-        self.s_tensor = s_tensor
+        self.sos_idx = sos_idx
         self.train = train
         self.emb_x = emb_x
 
@@ -71,9 +80,10 @@ class SourceModel(nn.Module):
 
 # Non-continious
 class TransModel(nn.Module):
-    def __init__(self, emb_x, emb_y, emb_dim, hidden_dim, vocab_size, attention, train=False, s_tensor=None):
+    def __init__(self, emb_x, emb_y, emb_dim, hidden_dim, vocab_size, attention, device, train=False, sos_idx=None, eos_idx=None):
         super(TransModel, self).__init__()
-        self.s_tensor = s_tensor
+        self.sos_idx = sos_idx
+        self.eos_idx = eos_idx
         self.emb_x = emb_x
         self.emb_y = emb_y
         self.t_size = hidden_dim * 2 + emb_dim
@@ -88,6 +98,7 @@ class TransModel(nn.Module):
 
         self.aff_out_y = nn.Linear(self.t_size + emb_dim, vocab_size)
         self.train = train
+        self.device = device
 
     def forward(self, x, x_mask, z, y=None, max_len=None):
         f = self.emb_x(x.long())
@@ -113,6 +124,113 @@ class TransModel(nn.Module):
             t.append(torch.squeeze(t_j))
             pre_out.append(self.aff_out_y(torch.cat((t_j, e_j), 2)))
         return pre_out
+
+    def greedy_decode(self, x, x_mask, z, max_len):
+        batch_size = x.shape[0]
+
+        f = self.emb_x(x.long())
+        bigru_x_h0 = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
+        s, _ = self.rnn_bigru_x(f, bigru_x_h0)
+
+        if max_len == None:
+            max_len = y.shape[-1]
+
+        t = [torch.tanh(self.aff_init_dec(z))]
+        proj_key = self.attention.key_layer(s)
+
+        # pre_out = []
+        sequences = torch.tensor([[self.sos_idx] for _ in range(batch_size)]).to(self.device)
+
+        # sequences = torch.tensor([[self.sos_idx]] * batch_size).to(self.device)
+
+        # print(sequences)
+        # print(sequences.shape)
+        # asd
+        for j in range(max_len):
+            # print("Timestep: ", j)
+            c_j, _ = self.attention(t[j].unsqueeze(1), proj_key, s, x_mask)
+            # print("c_j.shape: ", c_j.shape)
+            e_j = self.emb_y(torch.unsqueeze(sequences[:, j], 1).long())
+            # print("e_j.shape: ", e_j.shape)
+
+            h0 = torch.cat((c_j, e_j), 2)
+            t_j, _ = self.rnn_gru_dec(t[j].unsqueeze(1), torch.squeeze(h0).unsqueeze(0))
+            t.append(torch.squeeze(t_j))
+            pre_out_j = self.aff_out_y(torch.cat((t_j, e_j), 2))
+            # print("pre_out_j.shape: ", pre_out_j.shape)
+            probs_j = F.softmax(pre_out_j, 2).squeeze(1) # this necessary?
+            # print("probs_j.shape: ", probs_j.shape)
+            max_values, max_idxs = probs_j.max(1)
+            # print(max_values, max_idxs)
+            # print("shapes", sequences.shape, max_idxs.shape)
+            sequences = torch.cat((sequences, max_idxs.unsqueeze(1)), 1)
+        return sequences
+
+
+
+    # Maybe code greedy first
+    # TODO calc batch-wise.....really slow
+    # def beam_search(self, x, x_mask_0, z, max_len, beam_size=3):
+    #     # batch_size = x.shape[0]
+    #     f = self.emb_x(x.long())
+    #     bigru_x_h0 = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
+    #     s_0, _ = self.rnn_bigru_x(f, bigru_x_h0)
+    #
+    #     t = [torch.tanh(self.aff_init_dec(z))]
+    #     proj_key_0 = self.attention.key_layer(s_0)
+    #     prev_beams = [[[self.sos_idx], 0, 0, False]]
+    #     for j in range(max_len):
+    #         y_j1 = []
+    #         t_j1 = []
+    #         done_beams = []
+    #         for beam_idx, beam in enumerate(prev_beams):
+    #             if beam[3]:
+    #                 done_beams.append(beam)
+    #             else:
+    #                 y_j1.append(beam[0][-1])
+    #                 t_j1.append(t[j][beam[2]])
+    #
+    #         y_j1 = torch.unsqueeze(torch.tensor(y_j1), 1).to(self.device)
+    #         e_j = self.emb_y(y_j1.long())
+    #
+    #
+    #         t_j1 = torch.stack(t_j1).to(self.device)
+    #
+    #         proj_key = proj_key_0.expand(t_j1.shape[0] ,-1,-1)
+    #         s = s_0.expand(t_j1.shape[0] ,-1,-1)
+    #         x_mask = x_mask_0.expand(t_j1.shape[0] ,-1,-1)
+    #         c_j, _ = self.attention(t_j1.unsqueeze(1), proj_key, s, x_mask_0)
+    #         # pri
+    #         h0 = torch.cat((c_j, e_j), 2)
+    #         t_j, _ = self.rnn_gru_dec(t_j1.unsqueeze(1), torch.squeeze(h0, 1).unsqueeze(0)) # Changed due no batch
+    #
+    #         t.append(torch.squeeze(t_j, 1))
+    #
+    #         pre_out_j = self.aff_out_y(torch.cat((t_j, e_j), 2))
+    #         probs_j = F.softmax(pre_out_j, 2).squeeze(1)
+    #
+    #         new_beams = []
+    #         # Init with done beams
+    #         for i in range(probs_j.shape[0]):
+    #             for w in range(probs_j.shape[1]):
+    #                 prev_beam = prev_beams[i]
+    #                 done = False
+    #                 if w == self.eos_idx:
+    #                     done = True
+    #                 new_beam = [
+    #                     prev_beam[0] + [i],
+    #                     prev_beam[1] + torch.log(probs_j[i][w]).item(),
+    #                     i,
+    #                     done
+    #                 ]
+    #                 if len(new_beams) < beam_size:
+    #                     new_beams.append(new_beam)
+    #                     new_beams.sort(key=lambda x: x[1], reverse=True)
+    #                 else:
+    #                     if new_beams[-1][1] < new_beam[1]:
+    #                         new_beams[-1] = new_beam
+    #                         new_beams.sort(key=lambda x: x[1], reverse=True)
+    #         prev_beams = new_beams
 
 # Currently is not conditioned on the target sentence (should be an option)
 class SentEmbInfModel(nn.Module):
