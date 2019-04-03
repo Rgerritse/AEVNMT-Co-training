@@ -25,21 +25,21 @@ def add_arguments(parser):
     parser.add_argument("--learning_rate", type=int, default=0.0003, help="Learning rate")
     parser.add_argument("--num_epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--batch_size", type=int, default=8, help="Number of samples per batch during training")
-    parser.add_argument("--batch_size_eval", type=int, default=2, help="Number of samples per batch during evaluation")
+    parser.add_argument("--batch_size_eval", type=int, default=256, help="Number of samples per batch during evaluation")
     parser.add_argument("--beam_size", type=int, default=5, help="Number of candidate solutions for beam search")
     parser.add_argument("--model_name", type=str, default="AEVNMT", help="Name of the model (used for checkpoints)")
     parser.add_argument("--max_len", type=int, default=50, help="Maximum sequence length")
     parser.add_argument("--num_sequences", type=int, default=100, help="Maximum sequence length")
     parser.add_argument("--num_steps", type=int, default=10, help="Number of training steps")
-    parser.add_argument("--steps_per_checkpoint", type=int, default=5, help="Number of steps per checkpoint")
-    parser.add_argument("--steps_per_eval", type=int, default=5, help="Number of steps per eval")
+    parser.add_argument("--steps_per_checkpoint", type=int, default=1, help="Number of steps per checkpoint")
+    parser.add_argument("--steps_per_eval", type=int, default=1, help="Number of steps per eval")
     parser.add_argument("--kl_annealing_steps", type=int, default=80000, help="Number of steps for kl annealing")
 
 def main():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     vocab = get_vocab(FLAGS.vocab)
     dataset_train = load_dataset("train", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab, FLAGS.num_sequences)
-    dataset_valid = load_dataset("valid", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab, FLAGS.num_sequences)
+    dataset_valid = load_dataset("valid", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab)
     model = setup_model(vocab, FLAGS.emb_dim, FLAGS.hidden_dim, FLAGS.max_len, device)
     trainer = Trainer(
         vocab,

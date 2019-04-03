@@ -57,7 +57,7 @@ class Trainer():
 
             batch_spd = (time.time() - start_time)
 
-            print("Batch {:06d}/{:06d} , Loss: {:.2f}, ETA: {:.1f}m".format(
+            print("Step {:06d}/{:06d} , Loss: {:.2f}, ETA: {:.1f}m".format(
                 step + 1,
                 self.num_steps,
                 loss.item(),
@@ -74,41 +74,6 @@ class Trainer():
 
             if (step + 1) % self.steps_per_eval== 0:
                 self.eval(self.model, self.dataset_valid, padding_idx, batch_size_eval, step + 1, predictions_dir)
-        # for epoch in range(saved_epoch, self.num_epochs):
-        #     start_time = time.time()
-        #     for i, batch in enumerate(dataloader):
-        #         opt.zero_grad()
-        #         x = batch["net_input"]["src_tokens"].to(self.device)
-        #         y = batch["target"].to(self.device)
-        #
-        #         x_mask = (x != padding_idx).unsqueeze(-2)
-        #         y_mask = (y != padding_idx)
-        #
-        #         pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, y, y_mask)
-        #         loss = self.compute_loss(pre_out_x, pre_out_y, x, y, mu_theta, sigma_theta, vocab_size)
-        #         loss.backward()
-        #         opt.step()
-        #
-        #         avg_batch_spd = (time.time() - start_time)/(i+1)
-        #         batchs_remaining = num_batches-(i+1)
-        #         ETA = (batchs_remaining * avg_batch_spd)/60
-        #
-        #         print("Epoch {:02d}/{:02d}, Batch {:06d}/{:06d} , Loss: {:.2f}, ETA: {:.1f}m".format(
-        #             epoch +1,
-        #             self.num_epochs,
-        #             i + 1,
-        #             len(dataloader),
-        #             loss.item(),
-        #             ETA)
-        #         )
-        #
-        #     state = {
-        #         'epoch': epoch + 1,
-        #         'state_dict': self.model.state_dict(),
-        #         'optimizer': opt.state_dict(),
-        #     }
-        #     torch.save(state, 'checkpoints/{}-{:02d}'.format(self.model_name, epoch + 1))
-        #     self.beam_search(self.model, self.dataset_valid, padding_idx, batch_size_eval, epoch + 1, predictions_dir)
 
     def eval(self, model, dataset, padding_idx, batch_size_eval, step, predictions_dir):
         dataloader = DataLoader(dataset, batch_size_eval, collate_fn=dataset.collater)
@@ -119,16 +84,29 @@ class Trainer():
             pred = self.model.predict(x, x_mask)
             for i in range(pred.shape[0]):
                 decoded = self.vocab.string(pred[i])
-                decoded.replace('<s>', '')
-                decoded.replace('</s>', '')
-                decoded.replace('<pad>', '')
-                decoded.strip()
+                decoded = decoded.replace('<s>', '').replace('</s>', '').replace('<pad>', '').strip()
                 with open(file_name, 'a') as the_file:
                     the_file.write(decoded + '\n')
 
+        # Remove BPE
         output_file_name = '{}/{}-{:06d}-out.txt'.format(predictions_dir, self.model_name, step)
-        with open(output_file_name, "w")  as file:
+        with open(output_file_name, "w") as file:
             sub = subprocess.run(['sed', '-r', 's/(@@ )|(@@ ?$)//g', file_name], stdout=file)
+
+        with open(output_file_name) as inp, open(output_file_name + ".detok", "w") as out:
+            subz = subprocess.run(['perl', 'data/mosesdecoder/scripts/tokenizer/detokenizer.perl', '-q'], stdin=inp, stdout=out)
+
+        val_path = "data/setimes.tokenized.en-tr/valid.tr"
+        scores_file = '{}-scores.txt'.format(self.model_name)
+        sacrebleu = subprocess.run(['sacrebleu', '--input', output_file_name+".detok", val_path, '--score-only'], stdout=subprocess.PIPE)
+        bleu_score = float(sacrebleu.stdout.strip())
+        with open(scores_file, 'a') as f_score:
+            f_score.write("Step {}: {}\n".format(step, bleu_score))
+
+        # sacrebleu --input predictions/AEVNMT-000001-out.txt.detok data/setimes.tokenized.en-tr/valid.tr
+        # with open(scores_file, "a") as f_scores:
+            # f_scores.write("Step: {}\n".format(step))
+            # sub = subprocess.run(['cat',  output_file_name + ".detok", '|' ,'sacrebleu', val_path], stdout=f_scores)
 
     def compute_loss(self, pre_out_x, pre_out_y, x, y, mu, sigma, vocab_size, step):
         x_stack = torch.stack(pre_out_x, 1).view(-1, vocab_size)
