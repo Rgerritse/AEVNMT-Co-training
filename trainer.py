@@ -4,6 +4,7 @@ import time
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import subprocess
+from tqdm import tqdm
 
 class Trainer():
     def __init__(self, vocab, model, dataset_train, dataset_valid, model_name, num_steps, steps_per_checkpoint, steps_per_eval, kl_annealing_steps, device):
@@ -75,9 +76,10 @@ class Trainer():
                 self.eval(self.model, self.dataset_valid, padding_idx, batch_size_eval, step + 1, predictions_dir)
 
     def eval(self, model, dataset, padding_idx, batch_size_eval, step, predictions_dir):
+        print("Evaluating...")
         dataloader = DataLoader(dataset, batch_size_eval, collate_fn=dataset.collater)
         file_name = '{}/{}-{:06d}.txt'.format(predictions_dir, self.model_name, step)
-        for i, batch in enumerate(dataloader):
+        for batch in tqdm(dataloader):
             x = batch["net_input"]["src_tokens"].to(self.device)
             x_mask = (x != padding_idx).unsqueeze(-2)
             pred = self.model.predict(x, x_mask)
@@ -98,14 +100,11 @@ class Trainer():
         val_path = "data/setimes.tokenized.en-tr/valid.tr"
         scores_file = '{}-scores.txt'.format(self.model_name)
         sacrebleu = subprocess.run(['sacrebleu', '--input', output_file_name+".detok", val_path, '--score-only'], stdout=subprocess.PIPE)
-        bleu_score = float(sacrebleu.stdout.strip())
+        # bleu_score = float(sacrebleu.stdout.strip())
+        bleu_score = sacrebleu.stdout.strip()
         with open(scores_file, 'a') as f_score:
             f_score.write("Step {}: {}\n".format(step, bleu_score))
 
-        # sacrebleu --input predictions/AEVNMT-000001-out.txt.detok data/setimes.tokenized.en-tr/valid.tr
-        # with open(scores_file, "a") as f_scores:
-            # f_scores.write("Step: {}\n".format(step))
-            # sub = subprocess.run(['cat',  output_file_name + ".detok", '|' ,'sacrebleu', val_path], stdout=f_scores)
 
     def compute_loss(self, pre_out_x, pre_out_y, x, y, mu, sigma, vocab_size, step):
         x_stack = torch.stack(pre_out_x, 1).view(-1, vocab_size)
