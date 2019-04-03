@@ -100,7 +100,8 @@ class Trainer():
         val_path = "data/setimes.tokenized.en-tr/valid.tr"
         scores_file = '{}-scores.txt'.format(self.model_name)
         sacrebleu = subprocess.run(['sacrebleu', '--input', output_file_name+".detok", val_path, '--score-only'], stdout=subprocess.PIPE)
-        bleu_score = float(sacrebleu.stdout.strip())
+        print(sacrebleu.stdout.strip())
+        bleu_score = sacrebleu.stdout.strip()
         # bleu_score = sacrebleu.stdout.strip()
         with open(scores_file, 'a') as f_score:
             f_score.write("Step {}: {}\n".format(step, bleu_score))
