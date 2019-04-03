@@ -47,7 +47,6 @@ def main():
         dataset_train,
         dataset_valid,
         FLAGS.model_name,
-        FLAGS.num_epochs,
         FLAGS.num_steps,
         FLAGS.steps_per_checkpoint,
         FLAGS.steps_per_eval,

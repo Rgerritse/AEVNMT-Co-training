@@ -6,13 +6,12 @@ from torch.utils.data import DataLoader
 import subprocess
 
 class Trainer():
-    def __init__(self, vocab, model, dataset_train, dataset_valid, model_name, num_epochs, num_steps, steps_per_checkpoint, steps_per_eval, kl_annealing_steps, device):
+    def __init__(self, vocab, model, dataset_train, dataset_valid, model_name, num_steps, steps_per_checkpoint, steps_per_eval, kl_annealing_steps, device):
         self.vocab = vocab
         self.model = model
         self.dataset_train = dataset_train
         self.dataset_valid = dataset_valid
         self.model_name = model_name
-        self.num_epochs = num_epochs
         self.num_steps = num_steps
         self.steps_per_checkpoint = steps_per_checkpoint
         self.steps_per_eval = steps_per_eval
