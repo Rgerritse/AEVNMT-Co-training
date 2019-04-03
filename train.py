@@ -22,6 +22,7 @@ def add_arguments(parser):
 
     # Training Parameters
     parser.add_argument("--device", type=str, default="cuda:0", help="Device to train on cuda:0|cpu")
+    parser.add_argument("--learning_rate", type=int, default=0.0003, help="Learning rate")
     parser.add_argument("--num_epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--batch_size", type=int, default=8, help="Number of samples per batch during training")
     parser.add_argument("--batch_size_eval", type=int, default=2, help="Number of samples per batch during evaluation")
@@ -29,6 +30,10 @@ def add_arguments(parser):
     parser.add_argument("--model_name", type=str, default="AEVNMT", help="Name of the model (used for checkpoints)")
     parser.add_argument("--max_len", type=int, default=50, help="Maximum sequence length")
     parser.add_argument("--num_sequences", type=int, default=100, help="Maximum sequence length")
+    parser.add_argument("--num_steps", type=int, default=10, help="Number of training steps")
+    parser.add_argument("--steps_per_checkpoint", type=int, default=5, help="Number of steps per checkpoint")
+    parser.add_argument("--steps_per_eval", type=int, default=5, help="Number of steps per eval")
+    parser.add_argument("--kl_annealing_steps", type=int, default=80000, help="Number of steps for kl annealing")
 
 def main():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -43,9 +48,13 @@ def main():
         dataset_valid,
         FLAGS.model_name,
         FLAGS.num_epochs,
+        FLAGS.num_steps,
+        FLAGS.steps_per_checkpoint,
+        FLAGS.steps_per_eval,
+        FLAGS.kl_annealing_steps,
         FLAGS.device
     )
-    trainer.run_epochs(vocab.pad(), len(vocab), FLAGS.batch_size, FLAGS.batch_size_eval, FLAGS.predictions_dir)
+    trainer.run_epochs(FLAGS.learning_rate, vocab.pad(), len(vocab), FLAGS.batch_size, FLAGS.batch_size_eval, FLAGS.predictions_dir)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

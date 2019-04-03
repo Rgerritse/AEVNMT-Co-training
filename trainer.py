@@ -3,79 +3,134 @@ import torch
 import time
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+import subprocess
 
 class Trainer():
-    def __init__(self, vocab, model, dataset_train, dataset_valid, model_name, num_epochs, device):
+    def __init__(self, vocab, model, dataset_train, dataset_valid, model_name, num_epochs, num_steps, steps_per_checkpoint, steps_per_eval, kl_annealing_steps, device):
         self.vocab = vocab
         self.model = model
         self.dataset_train = dataset_train
         self.dataset_valid = dataset_valid
         self.model_name = model_name
         self.num_epochs = num_epochs
+        self.num_steps = num_steps
+        self.steps_per_checkpoint = steps_per_checkpoint
+        self.steps_per_eval = steps_per_eval
+        self.kl_annealing_steps = kl_annealing_steps
         self.device = device
 
-    def run_epochs(self, padding_idx, vocab_size, batch_size, batch_size_eval, predictions_dir):
+    def run_epochs(self, learning_rate, padding_idx, vocab_size, batch_size, batch_size_eval, predictions_dir):
         dataloader = DataLoader(self.dataset_train, batch_size, collate_fn=self.dataset_train.collater)
         parameters = filter(lambda p: p.requires_grad, self.model.parameters())
-        opt = torch.optim.Adam(parameters)
+        opt = torch.optim.Adam(parameters, lr=learning_rate)
 
-        saved_epoch = 0
+        saved_step = 0
         checkpoints = [cp for cp in sorted(os.listdir('checkpoints')) if '-'.join(cp.split('-')[:-1]) == self.model_name]
         if checkpoints:
             state = torch.load('checkpoints/{}'.format(checkpoints[-1]))
-            saved_epoch = state['epoch']
+            saved_step = state['step']
             self.model.load_state_dict(state['state_dict'])
             opt.load_state_dict(state['optimizer'])
 
         num_batches = len(dataloader)
-        for epoch in range(saved_epoch, self.num_epochs):
+        dataloader_iterator = iter(dataloader)
+        for step in range(saved_step, self.num_steps):
             start_time = time.time()
-            for i, batch in enumerate(dataloader):
-                opt.zero_grad()
-                x = batch["net_input"]["src_tokens"].to(self.device)
-                y = batch["target"].to(self.device)
 
-                x_mask = (x != padding_idx).unsqueeze(-2)
-                y_mask = (y != padding_idx)
+            try:
+                batch = next(dataloader_iterator)
+            except StopIteration:
+                dataloader_iterator = iter(dataloader)
+                batch = next(dataloader_iterator)
 
-                pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, y, y_mask)
-                loss = self.compute_loss(pre_out_x, pre_out_y, x, y, mu_theta, sigma_theta, vocab_size)
-                loss.backward()
-                opt.step()
+            opt.zero_grad()
+            x = batch["net_input"]["src_tokens"].to(self.device)
+            y = batch["target"].to(self.device)
 
-                avg_batch_spd = (time.time() - start_time)/(i+1)
-                batchs_remaining = num_batches-(i+1)
-                ETA = (batchs_remaining * avg_batch_spd)/60
+            x_mask = (x != padding_idx).unsqueeze(-2)
+            y_mask = (y != padding_idx)
 
-                print("Epoch {:02d}/{:02d}, Batch {:06d}/{:06d} , Loss: {:.2f}, ETA: {:.1f}m".format(
-                    epoch +1,
-                    self.num_epochs,
-                    i + 1,
-                    len(dataloader),
-                    loss.item(),
-                    ETA)
-                )
+            pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, y, y_mask)
+            loss = self.compute_loss(pre_out_x, pre_out_y, x, y, mu_theta, sigma_theta, vocab_size, step)
+            loss.backward()
+            opt.step()
 
-            state = {
-                'epoch': epoch + 1,
-                'state_dict': self.model.state_dict(),
-                'optimizer': opt.state_dict(),
-            }
-            torch.save(state, 'checkpoints/{}-{:02d}'.format(self.model_name, epoch + 1))
-            self.beam_search(self.model, self.dataset_valid, padding_idx, batch_size_eval, epoch + 1, predictions_dir)
+            batch_spd = (time.time() - start_time)
 
-    def beam_search(self, model, dataset, padding_idx, batch_size_eval, epoch, predictions_dir):
+            print("Batch {:06d}/{:06d} , Loss: {:.2f}, ETA: {:.1f}m".format(
+                step + 1,
+                self.num_steps,
+                loss.item(),
+                batch_spd)
+            )
+
+            if (step + 1) % self.steps_per_checkpoint == 0:
+                state = {
+                    'step': step + 1,
+                    'state_dict': self.model.state_dict(),
+                    'optimizer': opt.state_dict(),
+                }
+                torch.save(state, 'checkpoints/{}-{:06d}'.format(self.model_name, step + 1))
+
+            if (step + 1) % self.steps_per_eval== 0:
+                self.eval(self.model, self.dataset_valid, padding_idx, batch_size_eval, step + 1, predictions_dir)
+        # for epoch in range(saved_epoch, self.num_epochs):
+        #     start_time = time.time()
+        #     for i, batch in enumerate(dataloader):
+        #         opt.zero_grad()
+        #         x = batch["net_input"]["src_tokens"].to(self.device)
+        #         y = batch["target"].to(self.device)
+        #
+        #         x_mask = (x != padding_idx).unsqueeze(-2)
+        #         y_mask = (y != padding_idx)
+        #
+        #         pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, y, y_mask)
+        #         loss = self.compute_loss(pre_out_x, pre_out_y, x, y, mu_theta, sigma_theta, vocab_size)
+        #         loss.backward()
+        #         opt.step()
+        #
+        #         avg_batch_spd = (time.time() - start_time)/(i+1)
+        #         batchs_remaining = num_batches-(i+1)
+        #         ETA = (batchs_remaining * avg_batch_spd)/60
+        #
+        #         print("Epoch {:02d}/{:02d}, Batch {:06d}/{:06d} , Loss: {:.2f}, ETA: {:.1f}m".format(
+        #             epoch +1,
+        #             self.num_epochs,
+        #             i + 1,
+        #             len(dataloader),
+        #             loss.item(),
+        #             ETA)
+        #         )
+        #
+        #     state = {
+        #         'epoch': epoch + 1,
+        #         'state_dict': self.model.state_dict(),
+        #         'optimizer': opt.state_dict(),
+        #     }
+        #     torch.save(state, 'checkpoints/{}-{:02d}'.format(self.model_name, epoch + 1))
+        #     self.beam_search(self.model, self.dataset_valid, padding_idx, batch_size_eval, epoch + 1, predictions_dir)
+
+    def eval(self, model, dataset, padding_idx, batch_size_eval, step, predictions_dir):
         dataloader = DataLoader(dataset, batch_size_eval, collate_fn=dataset.collater)
+        file_name = '{}/{}-{:06d}.txt'.format(predictions_dir, self.model_name, step)
         for i, batch in enumerate(dataloader):
             x = batch["net_input"]["src_tokens"].to(self.device)
             x_mask = (x != padding_idx).unsqueeze(-2)
             pred = self.model.predict(x, x_mask)
             for i in range(pred.shape[0]):
                 decoded = self.vocab.string(pred[i])
-                with open('{}/{}-{}.txt'.format(predictions_dir, self.model_name, epoch), 'a') as the_file:
+                decoded.replace('<s>', '')
+                decoded.replace('</s>', '')
+                decoded.replace('<pad>', '')
+                decoded.strip()
+                with open(file_name, 'a') as the_file:
                     the_file.write(decoded + '\n')
 
-    def compute_loss(self, pre_out_x, pre_out_y, x, y, mu, sigma, vocab_size):
+        output_file_name = '{}/{}-{:06d}-out.txt'.format(predictions_dir, self.model_name, step)
+        with open(output_file_name, "w")  as file:
+            sub = subprocess.run(['sed', '-r', 's/(@@ )|(@@ ?$)//g', file_name], stdout=file)
+
+    def compute_loss(self, pre_out_x, pre_out_y, x, y, mu, sigma, vocab_size, step):
         x_stack = torch.stack(pre_out_x, 1).view(-1, vocab_size)
         y_stack = torch.stack(pre_out_y, 1).view(-1, vocab_size)
 
@@ -83,7 +138,8 @@ class Trainer():
         y_loss = F.cross_entropy(y_stack, y.long().view(-1))
 
         KL_loss = self.compute_diagonal_gaussian_kl(mu, sigma)
-
+        if step < self.kl_annealing_steps:
+            KL_loss *= step/self.kl_annealing_steps
         return x_loss + y_loss + KL_loss
 
     def compute_diagonal_gaussian_kl(self, mu, sigma):
