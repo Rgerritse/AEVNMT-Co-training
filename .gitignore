@@ -4,3 +4,4 @@ venv/
 fairseq/
 checkpoints/
 predictions/
+AEVNMT-scores.txt
