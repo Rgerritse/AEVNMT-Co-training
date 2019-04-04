@@ -5,18 +5,37 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import subprocess
 from tqdm import tqdm
+import os
 
 class Trainer():
-    def __init__(self, vocab, model, dataset_train, dataset_valid, model_name, num_steps, steps_per_checkpoint, steps_per_eval, kl_annealing_steps, device):
+    def __init__(
+            self,
+            vocab,
+            model,
+            dataset_train,
+            dataset_valid,
+            valid_path,
+            model_name,
+            num_steps,
+            steps_per_checkpoint,
+            steps_per_eval,
+            kl_annealing_steps,
+            device,
+            checkpoints_dir="checkpoints",
+            predictions_dir="predictions",
+        ):
         self.vocab = vocab
         self.model = model
         self.dataset_train = dataset_train
         self.dataset_valid = dataset_valid
+        self.valid_path = valid_path
         self.model_name = model_name
         self.num_steps = num_steps
         self.steps_per_checkpoint = steps_per_checkpoint
         self.steps_per_eval = steps_per_eval
         self.kl_annealing_steps = kl_annealing_steps
+        self.checkpoints_dir = checkpoints_dir
+        self.predictions_dir = predictions_dir
         self.device = device
 
     def run_epochs(self, learning_rate, padding_idx, vocab_size, batch_size, batch_size_eval, predictions_dir):
@@ -25,12 +44,13 @@ class Trainer():
         opt = torch.optim.Adam(parameters, lr=learning_rate)
 
         saved_step = 0
-        checkpoints = [cp for cp in sorted(os.listdir('checkpoints')) if '-'.join(cp.split('-')[:-1]) == self.model_name]
-        if checkpoints:
-            state = torch.load('checkpoints/{}'.format(checkpoints[-1]))
-            saved_step = state['step']
-            self.model.load_state_dict(state['state_dict'])
-            opt.load_state_dict(state['optimizer'])
+        if os.path.exists(self.checkpoints_dir):
+            checkpoints = [cp for cp in sorted(os.listdir('checkpoints')) if '-'.join(cp.split('-')[:-1]) == self.model_name]
+            if checkpoints:
+                state = torch.load('checkpoints/{}'.format(checkpoints[-1]))
+                saved_step = state['step']
+                self.model.load_state_dict(state['state_dict'])
+                opt.load_state_dict(state['optimizer'])
 
         num_batches = len(dataloader)
         dataloader_iterator = iter(dataloader)
@@ -65,6 +85,8 @@ class Trainer():
             )
 
             if (step + 1) % self.steps_per_checkpoint == 0:
+                if not os.path.exists(self.checkpoints_dir):
+                    os.mkdir(self.checkpoints_dir)
                 state = {
                     'step': step + 1,
                     'state_dict': self.model.state_dict(),
@@ -77,17 +99,18 @@ class Trainer():
 
     def eval(self, model, dataset, padding_idx, batch_size_eval, step, predictions_dir):
         print("Evaluating...")
+        if not os.path.exists(self.predictions_dir):
+            os.mkdir(self.predictions_dir)
+
         dataloader = DataLoader(dataset, batch_size_eval, collate_fn=dataset.collater)
         file_name = '{}/{}-{:06d}.txt'.format(predictions_dir, self.model_name, step)
         for batch in tqdm(dataloader):
             x = batch["net_input"]["src_tokens"].to(self.device)
             x_mask = (x != padding_idx).unsqueeze(-2)
             pred = self.model.predict(x, x_mask)
-            for i in range(pred.shape[0]):
-                decoded = self.vocab.string(pred[i])
-                decoded = decoded.replace('<s>', '').replace('</s>', '').replace('<pad>', '').strip()
-                with open(file_name, 'a') as the_file:
-                    the_file.write(decoded + '\n')
+            decoded = self.vocab.string(pred).replace('<s>', '').replace('</s>', '').replace('<pad>', '').strip()
+            with open(file_name, 'a') as the_file:
+                the_file.write(decoded + '\n')
 
         # Remove BPE
         output_file_name = '{}/{}-{:06d}-out.txt'.format(predictions_dir, self.model_name, step)
@@ -97,10 +120,10 @@ class Trainer():
         with open(output_file_name) as inp, open(output_file_name + ".detok", "w") as out:
             subz = subprocess.run(['perl', 'data/mosesdecoder/scripts/tokenizer/detokenizer.perl', '-q'], stdin=inp, stdout=out)
 
-        val_path = "data/setimes.tokenized.en-tr/valid.tr"
+        # val_path = "data/setimes.tokenized.en-tr/valid.tr"
         scores_file = '{}-scores.txt'.format(self.model_name)
-        sacrebleu = subprocess.run(['sacrebleu', '--input', output_file_name+".detok", val_path, '--score-only'], stdout=subprocess.PIPE)
-        print(sacrebleu.stdout.strip())
+        sacrebleu = subprocess.run(['sacrebleu', '--input', output_file_name+".detok", self.valid_path, '--score-only'], stdout=subprocess.PIPE)
+        # print(sacrebleu.stdout.strip())
         bleu_score = sacrebleu.stdout.strip()
         # bleu_score = sacrebleu.stdout.strip()
         with open(scores_file, 'a') as f_score:

@@ -30,8 +30,10 @@ def load_dataset(dataset, data_dir, src_lang, tgt_lang, vocab, num_sequences=Non
     with open(tgt_path, encoding='utf-8') as file:
         for i, line in enumerate(file):
             if num_sequences == None or i < num_sequences:
-                sentence = line.strip() + "</s>"
+                sentence = line.strip() + " </s>"
+                # print(sentence)
                 tokens = vocab.encode_line(sentence, add_if_not_exist=False)
+                # print(tokens)
                 tgt.append(tokens)
                 tgt_lengths.append(tokens.numel())
 
@@ -49,6 +51,7 @@ def setup_model(vocab, emb_dim, hidden_dim, max_len, device):
     sos_idx = vocab.index("<s>")
     eos_idx = vocab.index("</s>")
     model = AEVNMT(
+        vocab,
         len(vocab),
         emb_dim,
         vocab.pad(),

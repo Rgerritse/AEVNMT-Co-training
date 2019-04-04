@@ -31,7 +31,7 @@ def add_arguments(parser):
     parser.add_argument("--max_len", type=int, default=50, help="Maximum sequence length")
     parser.add_argument("--num_sequences", type=int, default=10, help="Maximum sequences")
     parser.add_argument("--num_steps", type=int, default=140000, help="Number of training steps")
-    parser.add_argument("--steps_per_checkpoint", type=int, default=1, help="Number of steps per checkpoint")
+    parser.add_argument("--steps_per_checkpoint", type=int, default=500, help="Number of steps per checkpoint")
     parser.add_argument("--steps_per_eval", type=int, default=1, help="Number of steps per eval")
     parser.add_argument("--kl_annealing_steps", type=int, default=80000, help="Number of steps for kl annealing")
 
@@ -40,12 +40,18 @@ def main():
     vocab = get_vocab(FLAGS.vocab)
     dataset_train = load_dataset("train", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab, FLAGS.num_sequences)
     dataset_valid = load_dataset("valid", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab)
+    valid_path = FLAGS.data_dir + "/valid.tr"
+    # valid_path = FLAGS.data_dir + "/valid.sm.tr"
+
+    # dataset_train = load_dataset("valid.sm", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab)
+    # dataset_valid = load_dataset("valid.sm", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab)
     model = setup_model(vocab, FLAGS.emb_dim, FLAGS.hidden_dim, FLAGS.max_len, device)
     trainer = Trainer(
         vocab,
         model,
         dataset_train,
         dataset_valid,
+        valid_path,
         FLAGS.model_name,
         FLAGS.num_steps,
         FLAGS.steps_per_checkpoint,

@@ -5,11 +5,11 @@ import torch.nn.functional as F
 import copy
 
 class AEVNMT(nn.Module):
-    def __init__(self, vocab_size, emb_dim, padding_idx, hidden_dim, max_len, device, train=False, sos_idx=None, eos_idx=None):
+    def __init__(self, vocab, vocab_size, emb_dim, padding_idx, hidden_dim, max_len, device, train=False, sos_idx=None, eos_idx=None):
         super(AEVNMT, self).__init__()
 
         self.device = device
-
+        self.vocab = vocab
         # Initialize parameters
         self.hidden_dim = hidden_dim
         self.emb_dim = emb_dim
@@ -28,7 +28,7 @@ class AEVNMT(nn.Module):
         # Initialize models
         self.attention = BahdanauAttention(hidden_dim, query_size = 2 * hidden_dim + emb_dim)
         self.source = SourceModel(self.emb_x, emb_dim, hidden_dim, vocab_size, train=train, sos_idx=sos_idx, eos_idx=eos_idx).to(device)
-        self.trans = TransModel(self.emb_x, self.emb_y, emb_dim, hidden_dim, vocab_size, self.attention, device, train=train, sos_idx=sos_idx, eos_idx=eos_idx).to(device)
+        self.trans = TransModel(self.vocab, self.emb_x, self.emb_y, emb_dim, hidden_dim, vocab_size, self.attention, device, train=train, sos_idx=sos_idx, eos_idx=eos_idx).to(device)
         self.enc = SentEmbInfModel(self.emb_x, emb_dim, hidden_dim).to(device)
 
     def forward(self, x, x_mask, y=None, y_mask=None):
@@ -80,8 +80,9 @@ class SourceModel(nn.Module):
 
 # Non-continious
 class TransModel(nn.Module):
-    def __init__(self, emb_x, emb_y, emb_dim, hidden_dim, vocab_size, attention, device, train=False, sos_idx=None, eos_idx=None):
+    def __init__(self, vocab, emb_x, emb_y, emb_dim, hidden_dim, vocab_size, attention, device, train=False, sos_idx=None, eos_idx=None):
         super(TransModel, self).__init__()
+        self.vocab = vocab
         self.sos_idx = sos_idx
         self.eos_idx = eos_idx
         self.emb_x = emb_x
@@ -101,6 +102,7 @@ class TransModel(nn.Module):
         self.device = device
 
     def forward(self, x, x_mask, z, y=None, max_len=None):
+        # print("y: ", y)
         batch_size = x.shape[0]
 
         f = self.emb_x(x.long())
@@ -121,11 +123,6 @@ class TransModel(nn.Module):
                 e_j = self.emb_y(start_seq.long())
             else:
                 e_j = self.emb_y(torch.unsqueeze(y[:, j-1], 1).long())
-            # if self.train == True:
-                # print("y_j", torch.unsqueeze(y[:, j], 1).long())
-            #
-            # else:
-            #     raise NotImplementedError
 
             h0 = torch.cat((c_j, e_j), 2)
             t_j, _ = self.rnn_gru_dec(t[j].unsqueeze(1), torch.squeeze(h0).unsqueeze(0))
@@ -146,31 +143,17 @@ class TransModel(nn.Module):
         t = [torch.tanh(self.aff_init_dec(z))]
         proj_key = self.attention.key_layer(s)
 
-        # pre_out = []
         sequences = torch.tensor([[self.sos_idx] for _ in range(batch_size)]).to(self.device)
-
-        # sequences = torch.tensor([[self.sos_idx]] * batch_size).to(self.device)
-
-        # print(sequences)
-        # print(sequences.shape)
-        # asd
         for j in range(max_len):
-            # print("Timestep: ", j)
             c_j, _ = self.attention(t[j].unsqueeze(1), proj_key, s, x_mask)
-            # print("c_j.shape: ", c_j.shape)
             e_j = self.emb_y(torch.unsqueeze(sequences[:, j], 1).long())
-            # print("e_j.shape: ", e_j.shape)
 
             h0 = torch.cat((c_j, e_j), 2)
             t_j, _ = self.rnn_gru_dec(t[j].unsqueeze(1), torch.squeeze(h0).unsqueeze(0))
             t.append(torch.squeeze(t_j))
             pre_out_j = self.aff_out_y(torch.cat((t_j, e_j), 2))
-            # print("pre_out_j.shape: ", pre_out_j.shape)
             probs_j = F.softmax(pre_out_j, 2).squeeze(1) # this necessary?
-            # print("probs_j.shape: ", probs_j.shape)
             max_values, max_idxs = probs_j.max(1)
-            # print(max_values, max_idxs)
-            # print("shapes", sequences.shape, max_idxs.shape)
             sequences = torch.cat((sequences, max_idxs.unsqueeze(1)), 1)
         return sequences
 
