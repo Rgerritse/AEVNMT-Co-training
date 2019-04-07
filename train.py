@@ -23,7 +23,6 @@ def add_arguments(parser):
     # Training Parameters
     parser.add_argument("--device", type=str, default="cuda:0", help="Device to train on cuda:0|cpu")
     parser.add_argument("--learning_rate", type=int, default=0.0003, help="Learning rate")
-    parser.add_argument("--num_epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--batch_size", type=int, default=8, help="Number of samples per batch during training")
     parser.add_argument("--batch_size_eval", type=int, default=256, help="Number of samples per batch during evaluation")
     parser.add_argument("--beam_size", type=int, default=5, help="Number of candidate solutions for beam search")
@@ -39,7 +38,7 @@ def main():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     vocab = get_vocab(FLAGS.vocab)
     dataset_train = load_dataset("train", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab, FLAGS.num_sequences)
-    dataset_valid = load_dataset("valid", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab)
+    dataset_valid = load_dataset("valid", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab, FLAGS.num_sequences)
     valid_path = FLAGS.data_dir + "/valid.tr"
     # valid_path = FLAGS.data_dir + "/valid.sm.tr"
 
