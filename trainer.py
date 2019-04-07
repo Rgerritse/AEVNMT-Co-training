@@ -71,7 +71,7 @@ class Trainer():
             y_mask = (y != padding_idx)
 
             pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, y, y_mask)
-            loss = self.compute_loss(pre_out_y, y, mu_theta, sigma_theta, vocab_size, step + 1, pre_out_x=pre_out_x, x=x)
+            loss = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, vocab_size, step + 1)
             loss.backward()
             opt.step()
 
@@ -95,7 +95,8 @@ class Trainer():
                 torch.save(state, 'checkpoints/{}-{:06d}'.format(self.model_name, step + 1))
 
             if (step + 1) % self.steps_per_eval== 0:
-                self.eval(self.model, self.dataset_valid, vocab_size, padding_idx, batch_size_eval, step + 1, predictions_dir)
+                with torch.no_grad():
+                    self.eval(self.model, self.dataset_valid, vocab_size, padding_idx, batch_size_eval, step + 1, predictions_dir)
 
     def eval(self, model, dataset, vocab_size, padding_idx, batch_size_eval, step, predictions_dir):
         print("Evaluating...")
@@ -108,9 +109,14 @@ class Trainer():
         for batch in tqdm(dataloader):
             x = batch["net_input"]["src_tokens"].to(self.device)
             x_mask = (x != padding_idx).unsqueeze(-2)
+
             y = batch["target"].to(self.device)
-            pre_out_y, pred, mu_theta, sigma_theta = self.model.predict(x, x_mask)
-            total_loss = self.compute_loss(pre_out_y, y, mu_theta, sigma_theta, vocab_size, step, reduction='sum')
+            y_mask = (y != padding_idx)
+
+            pred = self.model.predict(x, x_mask)
+            pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, y, y_mask)
+            total_loss += self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, vocab_size, step + 1, reduction='sum')
+            # total_loss = self.compute_loss(pre_out_y, y, mu_theta, sigma_theta, vocab_size, step, reduction='sum')
 
             decoded = self.vocab.string(pred).replace('<s>', '').replace('</s>', '').replace('<pad>', '').strip()
             with open(file_name, 'a') as the_file:
@@ -136,29 +142,17 @@ class Trainer():
             f_score.write("Step {}: {}\n".format(step, bleu_score))
 
 
-    def compute_loss(self, pre_out_y, y, mu, sigma, vocab_size, step, pre_out_x=None, x=None, reduction='mean'):
-        loss = 0
-
-        # print(torch.narrow(torch.stack(pre_out_y, 1), 1, 0, y.shape[1]).shape)
-        y_stack = torch.narrow(torch.stack(pre_out_y, 1), 1, 0, y.shape[1]).contiguous().view(-1, vocab_size)
-
-        # # y_stack = torch.stack(pre_out_y, 1).view(-1, vocab_size)
-        # print("y_stack: ", y_stack.shape)
-        # print("y: ", y.shape)
-        # print("y_reshaped: ", y.long().view(-1).shape)
+    def compute_loss(self, pre_out_x, x, pre_out_y, y, mu, sigma, vocab_size, step, reduction='mean'):
+        y_stack = torch.stack(pre_out_y, 1).view(-1, vocab_size)
         y_loss = F.cross_entropy(y_stack, y.long().view(-1), reduction=reduction)
-        loss += y_loss
 
-        if pre_out_x is not None and x is not None:
-            x_stack = torch.stack(pre_out_x, 1).view(-1, vocab_size)
-            x_loss = F.cross_entropy(x_stack, x.long().view(-1), reduction=reduction)
-            loss += x_loss
+        x_stack = torch.stack(pre_out_x, 1).view(-1, vocab_size)
+        x_loss = F.cross_entropy(x_stack, x.long().view(-1), reduction=reduction)
 
         KL_loss = self.compute_diagonal_gaussian_kl(mu, sigma)
         if step < self.kl_annealing_steps:
             KL_loss *= step/self.kl_annealing_steps
-        loss += KL_loss
-        return loss
+        return y_loss + x_loss + KL_loss
 
     def compute_diagonal_gaussian_kl(self, mu, sigma):
         var = sigma ** 2

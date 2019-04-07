@@ -46,8 +46,8 @@ class AEVNMT(nn.Module):
     def predict(self, x, x_mask):
         with torch.no_grad():
             mu_theta, sigma_theta = self.enc.forward(x)
-            pre_out, predictions = self.trans.greedy_decode(x, x_mask, mu_theta, self.max_len)
-            return pre_out, predictions, mu_theta, sigma_theta
+            predictions = self.trans.greedy_decode(x, x_mask, mu_theta, self.max_len)
+            return predictions
             # print(mu_theta.shape)
 
 class SourceModel(nn.Module):
@@ -143,7 +143,6 @@ class TransModel(nn.Module):
         t = [torch.tanh(self.aff_init_dec(z))]
         proj_key = self.attention.key_layer(s)
 
-        pre_out = []
         sequences = torch.tensor([[self.sos_idx] for _ in range(batch_size)]).to(self.device)
         for j in range(max_len):
             c_j, _ = self.attention(t[j].unsqueeze(1), proj_key, s, x_mask)
@@ -153,11 +152,10 @@ class TransModel(nn.Module):
             t_j, _ = self.rnn_gru_dec(t[j].unsqueeze(1), torch.squeeze(h0).unsqueeze(0))
             t.append(torch.squeeze(t_j))
             pre_out_j = self.aff_out_y(torch.cat((t_j, e_j), 2))
-            pre_out.append(pre_out_j)
             probs_j = F.softmax(pre_out_j, 2).squeeze(1) # this necessary?
             max_values, max_idxs = probs_j.max(1)
             sequences = torch.cat((sequences, max_idxs.unsqueeze(1)), 1)
-        return pre_out, sequences
+        return sequences
     # Maybe code greedy first
     # TODO calc batch-wise.....really slow
     # def beam_search(self, x, x_mask_0, z, max_len, beam_size=3):
