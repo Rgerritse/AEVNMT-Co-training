@@ -37,10 +37,12 @@ def add_arguments(parser):
 def main():
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     vocab = get_vocab(FLAGS.vocab)
-    dataset_train = load_dataset("train", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab, FLAGS.num_sequences)
-    dataset_valid = load_dataset("valid", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab, FLAGS.num_sequences)
-    valid_path = FLAGS.data_dir + "/valid.tr"
-    # valid_path = FLAGS.data_dir + "/valid.sm.tr"
+    dataset_train = load_dataset("valid.sm", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab)
+    dataset_valid = load_dataset("valid.sm", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab)
+    # dataset_train = load_dataset("train", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab, FLAGS.num_sequences)
+    # dataset_valid = load_dataset("valid", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab, FLAGS.num_sequences)
+    # valid_path = FLAGS.data_dir + "/valid.tr"
+    valid_path = FLAGS.data_dir + "/valid.sm.tr"
 
     # dataset_train = load_dataset("valid.sm", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab)
     # dataset_valid = load_dataset("valid.sm", FLAGS.data_dir, FLAGS.src_lang, FLAGS.tgt_lang, vocab)

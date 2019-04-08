@@ -31,9 +31,7 @@ def load_dataset(dataset, data_dir, src_lang, tgt_lang, vocab, num_sequences=Non
         for i, line in enumerate(file):
             if num_sequences == None or i < num_sequences:
                 sentence = line.strip() + " </s>"
-                # print(sentence)
                 tokens = vocab.encode_line(sentence, add_if_not_exist=False)
-                # print(tokens)
                 tgt.append(tokens)
                 tgt_lengths.append(tokens.numel())
 

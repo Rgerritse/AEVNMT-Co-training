@@ -102,6 +102,7 @@ class TransModel(nn.Module):
         self.device = device
 
     def forward(self, x, x_mask, z, y=None, max_len=None):
+        print("-- Train")
         # print("y: ", y)
         batch_size = x.shape[0]
 
@@ -117,12 +118,15 @@ class TransModel(nn.Module):
 
         pre_out = []
         for j in range(max_len):
+            # print("Timestep: ", j)
             c_j, _ = self.attention(t[j].unsqueeze(1), proj_key, s, x_mask)
             if j == 0:
                 start_seq = torch.tensor([[self.sos_idx] for _ in range(batch_size)]).to(self.device)
+                # print("input: \n", self.vocab.string(start_seq))
                 e_j = self.emb_y(start_seq.long())
             else:
-                e_j = self.emb_y(torch.unsqueeze(y[:, j-1], 1).long())
+                # print("input: \n", self.vocab.string(torch.unsqueeze(y[:, j-1], 1)))
+                e_j = self.emb_y(torch.unsqueeze(y[:, j], 1).long())
 
             h0 = torch.cat((c_j, e_j), 2)
             t_j, _ = self.rnn_gru_dec(t[j].unsqueeze(1), torch.squeeze(h0).unsqueeze(0))
@@ -131,6 +135,7 @@ class TransModel(nn.Module):
         return pre_out
 
     def greedy_decode(self, x, x_mask, z, max_len):
+        # print("-- Decode")
         batch_size = x.shape[0]
 
         f = self.emb_x(x.long())
@@ -145,6 +150,8 @@ class TransModel(nn.Module):
 
         sequences = torch.tensor([[self.sos_idx] for _ in range(batch_size)]).to(self.device)
         for j in range(max_len):
+            # print("Timestep: ", j)
+            # print("Input: \n", self.vocab.string(torch.unsqueeze(sequences[:, j], 1)))
             c_j, _ = self.attention(t[j].unsqueeze(1), proj_key, s, x_mask)
             e_j = self.emb_y(torch.unsqueeze(sequences[:, j], 1).long())
 

@@ -65,12 +65,21 @@ class Trainer():
 
             opt.zero_grad()
             x = batch["net_input"]["src_tokens"].to(self.device)
+            prev = batch["net_input"]["prev_output_tokens"].to(self.device)
             y = batch["target"].to(self.device)
 
             x_mask = (x != padding_idx).unsqueeze(-2)
-            y_mask = (y != padding_idx)
+            prev_mask = (prev != padding_idx)
+            # y_mask = (y != padding_idx)
 
-            pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, y, y_mask)
+            # print("prev, ", prev)
+            # print("prev_decoded: ", self.vocab.string(prev))
+            #
+            # print("y: ", y)
+            # print("y_decoded", self.vocab.string(y))
+
+            # pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, y, y_mask)
+            pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, prev, prev_mask)
             loss = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, vocab_size, step + 1)
             loss.backward()
             opt.step()
@@ -125,16 +134,17 @@ class Trainer():
         print("Validation Loss: {:.2f}".format(total_loss))
 
         # Remove BPE
-        output_file_name = '{}/{}-{:06d}-out.txt'.format(predictions_dir, self.model_name, step)
-        with open(output_file_name, "w") as file:
-            sub = subprocess.run(['sed', '-r', 's/(@@ )|(@@ ?$)//g', file_name], stdout=file)
-
-        with open(output_file_name) as inp, open(output_file_name + ".detok", "w") as out:
-            subz = subprocess.run(['perl', 'data/mosesdecoder/scripts/tokenizer/detokenizer.perl', '-q'], stdin=inp, stdout=out)
+        # output_file_name = '{}/{}-{:06d}-out.txt'.format(predictions_dir, self.model_name, step)
+        # with open(output_file_name, "w") as file:
+        #     sub = subprocess.run(['sed', '-r', 's/(@@ )|(@@ ?$)//g', file_name], stdout=file)
+        #
+        # with open(output_file_name) as inp, open(output_file_name + ".detok", "w") as out:
+        #     subz = subprocess.run(['perl', 'data/mosesdecoder/scripts/tokenizer/detokenizer.perl', '-q'], stdin=inp, stdout=out)
 
         # val_path = "data/setimes.tokenized.en-tr/valid.tr"
         scores_file = '{}-scores.txt'.format(self.model_name)
-        sacrebleu = subprocess.run(['sacrebleu', '--input', output_file_name+".detok", self.valid_path, '--score-only'], stdout=subprocess.PIPE)
+        # sacrebleu = subprocess.run(['sacrebleu', '--input', output_file_name+".detok", self.valid_path, '--score-only'], stdout=subprocess.PIPE)
+        sacrebleu = subprocess.run(['sacrebleu', '--input', file_name, self.valid_path, '--score-only'], stdout=subprocess.PIPE)
         # print(sacrebleu.stdout.strip())
         bleu_score = sacrebleu.stdout.strip()
         # bleu_score = sacrebleu.stdout.strip()
