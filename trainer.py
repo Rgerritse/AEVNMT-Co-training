@@ -70,26 +70,23 @@ class Trainer():
 
             x_mask = (x != padding_idx).unsqueeze(-2)
             prev_mask = (prev != padding_idx)
-            # y_mask = (y != padding_idx)
 
-            # print("prev, ", prev)
-            # print("prev_decoded: ", self.vocab.string(prev))
-            #
-            # print("y: ", y)
-            # print("y_decoded", self.vocab.string(y))
-
-            # pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, y, y_mask)
             pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, prev, prev_mask)
-            loss = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, vocab_size, step + 1)
+            print("pre_out_x.shape ", pre_out_x[0].shape)
+            print("pre_out_y.shape ", pre_out_y[0].shape)
+            loss, losses = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, vocab_size, step + 1)
             loss.backward()
             opt.step()
 
             batch_spd = (time.time() - start_time)
 
-            print("Step {:06d}/{:06d} , Loss: {:.2f}, ETA: {:.1f}m".format(
+            print("Step {:06d}/{:06d} , Total Loss: {:.2f}, Y-Loss: {:.2f}, X-Loss: {:.2f}, KL-Loss: {:.2f}, Batch time: {:.1f}s".format(
                 step + 1,
                 self.num_steps,
                 loss.item(),
+                losses[0].item(),
+                losses[1].item(),
+                losses[2].item(),
                 batch_spd)
             )
 
@@ -124,14 +121,15 @@ class Trainer():
 
             pred = self.model.predict(x, x_mask)
             pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, y, y_mask)
-            total_loss += self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, vocab_size, step + 1, reduction='sum')
+            loss, _ = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, vocab_size, step + 1, reduction='sum')
+            total_loss += loss
             # total_loss = self.compute_loss(pre_out_y, y, mu_theta, sigma_theta, vocab_size, step, reduction='sum')
 
             decoded = self.vocab.string(pred).replace('<s>', '').replace('</s>', '').replace('<pad>', '').strip()
             with open(file_name, 'a') as the_file:
                 the_file.write(decoded + '\n')
 
-        print("Validation Loss: {:.2f}".format(total_loss))
+        # print("Validation Loss: {:.2f}".format(total_loss))
 
         # Remove BPE
         # output_file_name = '{}/{}-{:06d}-out.txt'.format(predictions_dir, self.model_name, step)
@@ -162,7 +160,10 @@ class Trainer():
         KL_loss = self.compute_diagonal_gaussian_kl(mu, sigma)
         if step < self.kl_annealing_steps:
             KL_loss *= step/self.kl_annealing_steps
-        return y_loss + x_loss + KL_loss
+
+        loss = y_loss + x_loss + KL_loss
+        losses = [y_loss, x_loss, KL_loss]
+        return loss, losses
 
     def compute_diagonal_gaussian_kl(self, mu, sigma):
         var = sigma ** 2

@@ -30,7 +30,7 @@ def add_arguments(parser):
     parser.add_argument("--max_len", type=int, default=50, help="Maximum sequence length")
     parser.add_argument("--num_sequences", type=int, default=10, help="Maximum sequences")
     parser.add_argument("--num_steps", type=int, default=140000, help="Number of training steps")
-    parser.add_argument("--steps_per_checkpoint", type=int, default=500, help="Number of steps per checkpoint")
+    parser.add_argument("--steps_per_checkpoint", type=int, default=1, help="Number of steps per checkpoint")
     parser.add_argument("--steps_per_eval", type=int, default=1, help="Number of steps per eval")
     parser.add_argument("--kl_annealing_steps", type=int, default=80000, help="Number of steps for kl annealing")
 

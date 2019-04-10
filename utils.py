@@ -42,12 +42,14 @@ def load_dataset(dataset, data_dir, src_lang, tgt_lang, vocab, num_sequences=Non
             tgt=tgt,
             tgt_sizes=src_lengths,
             tgt_dict=vocab,
+            left_pad_source=False
         )
     return dataset
 
 def setup_model(vocab, emb_dim, hidden_dim, max_len, device):
     sos_idx = vocab.index("<s>")
     eos_idx = vocab.index("</s>")
+    pad_idx = vocab.pad()
     model = AEVNMT(
         vocab,
         len(vocab),
@@ -58,6 +60,7 @@ def setup_model(vocab, emb_dim, hidden_dim, max_len, device):
         device,
         train=True,
         sos_idx=sos_idx,
-        eos_idx=eos_idx
+        eos_idx=eos_idx,
+        pad_idx=pad_idx
     ).to(device)
     return model
