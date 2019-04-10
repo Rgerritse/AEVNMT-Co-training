@@ -72,8 +72,6 @@ class Trainer():
             prev_mask = (prev != padding_idx)
 
             pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, prev, prev_mask)
-            print("pre_out_x.shape ", pre_out_x[0].shape)
-            print("pre_out_y.shape ", pre_out_y[0].shape)
             loss, losses = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, vocab_size, step + 1)
             loss.backward()
             opt.step()
@@ -121,8 +119,8 @@ class Trainer():
 
             pred = self.model.predict(x, x_mask)
             pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, y, y_mask)
-            loss, _ = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, vocab_size, step + 1, reduction='sum')
-            total_loss += loss
+            # loss, _ = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, vocab_size, step + 1, reduction='sum')
+            # total_loss += loss
             # total_loss = self.compute_loss(pre_out_y, y, mu_theta, sigma_theta, vocab_size, step, reduction='sum')
 
             decoded = self.vocab.string(pred).replace('<s>', '').replace('</s>', '').replace('<pad>', '').strip()
