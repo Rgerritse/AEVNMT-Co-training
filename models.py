@@ -37,7 +37,7 @@ class AEVNMT(nn.Module):
 
         batch_size = x.shape[0]
         e = self.normal.sample(sample_shape=torch.tensor([batch_size])).to(self.device)
-        z = mu_theta + e * sigma_theta
+        z = mu_theta + e * (sigma_theta ** 2)
 
         pre_out_x = self.source.forward(z, x=x)
         pre_out_y = self.trans.forward(x, x_mask, z, y=y)
@@ -47,8 +47,8 @@ class AEVNMT(nn.Module):
     def predict(self, x, x_mask):
         with torch.no_grad():
             mu_theta, sigma_theta = self.enc.forward(x)
-            predictions = self.trans.beam_decode(x, x_mask, mu_theta, self.max_len)
-            # predictions = self.trans.greedy_decode(x, x_mask, mu_theta, self.max_len)
+            # predictions = self.trans.beam_decode(x, x_mask, mu_theta, self.max_len)
+            predictions = self.trans.greedy_decode(x, x_mask, mu_theta, self.max_len)
             # print(predictions)
             return predictions
             # print(mu_theta.shape)
