@@ -6,7 +6,7 @@ import copy
 import numpy as np
 
 class AEVNMT(nn.Module):
-    def __init__(self, vocab, vocab_size, emb_dim, padding_idx, hidden_dim, max_len, device, train=False, sos_idx=None, eos_idx=None, pad_idx=None):
+    def __init__(self, vocab, vocab_size, emb_dim, padding_idx, hidden_dim, max_len, device, dropout=0.3, sos_idx=None, eos_idx=None, pad_idx=None):
         super(AEVNMT, self).__init__()
 
         self.device = device
@@ -15,6 +15,7 @@ class AEVNMT(nn.Module):
         self.hidden_dim = hidden_dim
         self.emb_dim = emb_dim
         self.max_len = max_len
+        self.dropout = dropout
 
         # Initialize priors
         self.mu_prior = torch.tensor([0.0] * hidden_dim)
@@ -28,8 +29,8 @@ class AEVNMT(nn.Module):
 
         # Initialize models
         self.attention = BahdanauAttention(hidden_dim, query_size = 2 * hidden_dim + emb_dim)
-        self.source = SourceModel(self.vocab, self.emb_x, emb_dim, hidden_dim, vocab_size, train=train, sos_idx=sos_idx, eos_idx=eos_idx).to(device)
-        self.trans = TransModel(self.vocab, self.emb_x, self.emb_y, emb_dim, hidden_dim, vocab_size, self.attention, device, train=train, sos_idx=sos_idx, eos_idx=eos_idx, pad_idx=pad_idx).to(device)
+        self.source = SourceModel(self.vocab, self.emb_x, emb_dim, hidden_dim, vocab_size, dropout, sos_idx=sos_idx, eos_idx=eos_idx).to(device)
+        self.trans = TransModel(self.vocab, self.emb_x, self.emb_y, emb_dim, hidden_dim, vocab_size, self.attention, device, dropout, sos_idx=sos_idx, eos_idx=eos_idx, pad_idx=pad_idx).to(device)
         self.enc = SentEmbInfModel(self.emb_x, emb_dim, hidden_dim).to(device)
 
     def forward(self, x, x_mask, y=None, y_mask=None):
@@ -54,10 +55,9 @@ class AEVNMT(nn.Module):
             # print(mu_theta.shape)
 
 class SourceModel(nn.Module):
-    def __init__(self, vocab, emb_x, emb_dim, hidden_dim, vocab_size, train=False, sos_idx=None, eos_idx=None):
+    def __init__(self, vocab, emb_x, emb_dim, hidden_dim, vocab_size, dropout, sos_idx=None, eos_idx=None):
         super(SourceModel, self).__init__()
         self.sos_idx = sos_idx
-        self.train = train
         self.vocab = vocab
         self.emb_x = emb_x
 
@@ -65,6 +65,8 @@ class SourceModel(nn.Module):
         self.aff_init_lm = nn.Linear(hidden_dim, hidden_dim)
         self.rnn_gru_lm = nn.GRU(emb_dim, hidden_dim, batch_first=True)
         self.aff_out_x = nn.Linear(hidden_dim, vocab_size)
+        self.dropout = nn.Dropout(dropout)
+
     def forward(self, z, x=None, max_len=None):
         if max_len == None:
             max_len = x.shape[-1]
@@ -72,21 +74,17 @@ class SourceModel(nn.Module):
         pre_out = []
 
         h = [torch.tanh(self.aff_init_lm(z))]
-        # print("Source model")
         for j in range(max_len):
-            # print("Timestep j: ", j)
-            if self.train == True:
-                f_j = self.emb_x(torch.unsqueeze(x[:, j], 1).long())
-            else:
-                raise NotImplementedError
+            f_j = self.emb_x(torch.unsqueeze(x[:, j], 1).long())
             h_j, _ = self.rnn_gru_lm(f_j, h[j].unsqueeze(0))
+            h_j = self.dropout(h_j)
             h.append(torch.squeeze(h_j))
             pre_out.append(self.aff_out_x(h[j]))
         return pre_out
 
 # Non-continious
 class TransModel(nn.Module):
-    def __init__(self, vocab, emb_x, emb_y, emb_dim, hidden_dim, vocab_size, attention, device, train=False, sos_idx=None, eos_idx=None, pad_idx=None):
+    def __init__(self, vocab, emb_x, emb_y, emb_dim, hidden_dim, vocab_size, attention, device, dropout=0.3, sos_idx=None, eos_idx=None, pad_idx=None):
         super(TransModel, self).__init__()
         self.vocab = vocab
         self.sos_idx = sos_idx
@@ -98,6 +96,7 @@ class TransModel(nn.Module):
 
         self.aff_init_enc = nn.Linear(hidden_dim, hidden_dim)
         self.rnn_bigru_x = nn.GRU(emb_dim, hidden_dim, batch_first=True, bidirectional=True)
+        self.dropout = nn.Dropout(dropout)
 
         self.attention = attention
 
@@ -105,17 +104,15 @@ class TransModel(nn.Module):
         self.rnn_gru_dec = nn.GRU(self.t_size, self.t_size, batch_first=True)
 
         self.aff_out_y = nn.Linear(self.t_size + emb_dim, vocab_size)
-        self.train = train
         self.device = device
 
     def forward(self, x, x_mask, z, y=None, max_len=None):
-        # print("-- Train")
-        # print("y: ", y)
         batch_size = x.shape[0]
 
         f = self.emb_x(x.long())
         bigru_x_h0 = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
         s, _ = self.rnn_bigru_x(f, bigru_x_h0)
+        s = self.dropout(s)
 
         if max_len == None:
             max_len = y.shape[-1]
@@ -137,6 +134,7 @@ class TransModel(nn.Module):
 
             h0 = torch.cat((c_j, e_j), 2)
             t_j, _ = self.rnn_gru_dec(t[j].unsqueeze(1), torch.squeeze(h0).unsqueeze(0))
+            t_j = self.dropout(t_j)
             t.append(torch.squeeze(t_j))
             pre_out.append(self.aff_out_y(torch.cat((t_j, e_j), 2)))
         return pre_out
@@ -148,6 +146,7 @@ class TransModel(nn.Module):
         f = self.emb_x(x.long())
         bigru_x_h0 = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
         s, _ = self.rnn_bigru_x(f, bigru_x_h0)
+        s = self.dropout(s)
 
         t = [torch.tanh(self.aff_init_dec(z))]
         proj_key = self.attention.key_layer(s)
@@ -161,6 +160,7 @@ class TransModel(nn.Module):
 
             h0 = torch.cat((c_j, e_j), 2)
             t_j, _ = self.rnn_gru_dec(t[j].unsqueeze(1), torch.squeeze(h0).unsqueeze(0))
+            t_j = self.dropout(t_j)
             t.append(torch.squeeze(t_j))
             pre_out_j = self.aff_out_y(torch.cat((t_j, e_j), 2))
             probs_j = F.softmax(pre_out_j, 2).squeeze(1) # this necessary?
@@ -168,23 +168,7 @@ class TransModel(nn.Module):
             sequences = torch.cat((sequences, max_idxs.unsqueeze(1)), 1)
         return sequences
 
-
-    # def beam_decode(self, x, x_mask, z, max_len, beam_size=3):
-    #     batch_size = x.shape[0]
-    #
-    #     f = self.emb_x(x.long())
-    #     bigru_x_h0 = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
-    #     s, _ = self.rnn_bigru_x(f, bigru_x_h0)
-    #
-    #     t = [torch.tanh(self.aff_init_dec(z))]
-    #     proj_key = self.attention.key_layer(s)
-    #
-    #     print("x: ", x.shape)
-
-        # beams = [[torch.tensor([self.sos_idx])] for _ in range(batch_size)]
-
-        # asd
-
+    # Node based???
     def beam_decode(self, x, x_mask, z, max_len, beam_size = 3):
         batch_size = x.shape[0]
 
@@ -304,208 +288,16 @@ class TransModel(nn.Module):
             idx = np.argmax(batch)
             sequences[b] = sequences[b][idx]
         return torch.tensor(sequences)
-            # sequences = new_sequences
-                # print(batch)
-                # print(batch)
-
-            # asd
-
-            # print(new_sequences)
-            # print(new_log_probs)
-            # ASD
-                # asd
-
-                # new_beams
-            # print(new_sequences)
-            # print(new_log_probs)
-            # asd
-                # print(sequences[batch][beam])
-                # print("==========")
-                # asd
-                # sequence =
-
-
-            #
-            #     beams = []
-            #     beam_probs = []
-            #     for b in range(beam_size):
-            #         beams.append(sequences[batch][beam] + [idx[i][b].item()])
-            #         beam_probs.append(log_probs[batch][beam] + values[i][b].item())
-            #     sequences[batch].extend(new_beams)
-                # print(sequences[batch][beam])
-                # print(new_beams)
-                # print(new_probs)
-
-                # asd
-                    # new_seq = sequence[batch][beam].append()
-                    # prev_seq = sequences[batch][beam]
-                    # new_seq = torch.cat((sequences[batch][beam].to(), idx[i]))
-                    # print(new_seq)
-                    # prev_seq.candidate
-                    # asd
-
-                # prev_seqs = [sequences[batch][beam] for _ in range(beam_size)]
-                # for b in range(range(beam_size)):
-                # print(prev_seqs)
-                # prev_seqs = sequences[batch][beam].unsqueeze(1).expand(beam_size, -1).to(self.device)
-                # new_seqs = torch.cat((prev_seqs, idx[i].unsqueeze(1)), 1)
-
-
-                # print(new_seqs)
-                # print("prev_seq", )
-                # print(batch, beam)
-                # print(idx[i])
-                # print(values[i])
-                #
-                # print("prev_seq", prev_seq.unsqueeze(1).expand(beam_size, -1))
-                # print(batch, beam)
-                # print(idx[i])
-                # print(values[i])
-
-
-            # print
-
-            # print("partial_idxs: ", partial_idxs)
-            # print("log_probs: ", log_probs)
-            # print("idx: ", idx)
-            # print("values: ", values)
-            # probs_expanded = log_probs.unsqueeze(2).expand(-1, -1, beam_size) # check how this works after beam is already 3..
-            # new_probs = torch.zeros(probs_expanded.shape).to(self.device)
-
-    #         print(new_probs)
-            # for i, (batch, beam) in enumerate(partial_idxs):
-            #     new_probs[batch, beam] += values[i]
-            #     print(idx[i])
-                # old_seq = sequences[batch][beam]
-                # new_seqs = [torch.cat((sequences[batch][beam], idx[i][k])) for k in range(beam_size)]
-                # print(new_seqs)
-                # for j in range()
-                # print(new_seqs)
-                # print(idx[i])
-                # sequences[batch][beam] += idx[i]
-                # print("sequences: ", sequences[batch][beam])
-            # print(new_probs)
-                # print(values[i])
-                # new_probs[batch, beam] += values[batch, beam]
-            # print(new_probs)
-                # print(probs_expanded)
-                # print("sequences: ", sequences)
-                #
-                # print(probs_expanded[batch, beam])
-                # print(batch, beam)
-                #
-                #
-                # print("idx: ", idx)
-                # print("idx: ", idx.shape)
-                #
-                # print("values: ", values)
-                # print("values: ", values.shape)
-
-
-
-
-
-
-            # for batch, idx in partial_idxs:
-                #
-
-            # asd
-            # sequences = torch.cat((probs_expanded, idx), 2)
-
-
-
-            # print("log_prob_exps: " , probs_expanded.shape)
-            # print("values: ", values.shape)
-            # print("values: ", values)
-            # print("log_probs: ", log_probs)
-
-
-
-            # print("sequences: ",  sequences)
-            # seq_expanded = sequences.expand(-1, 3, -1)
-            # sequences = torch.cat((seq_expanded, idx), 2) # should be fine now
-
-
-            # log_probs
-            # log_probs = torch.cat((log_probs, probs_expanded), 2)
-            # print(log_probs)
-            # print("values: ", values)
-            # print(values[-5:], idx[-5:])
-
-        # print(sequences)
-
-    # Maybe code greedy first
-    # TODO calc batch-wise.....really slow
-    # def beam_search(self, x, x_mask_0, z, max_len, beam_size=3):
-    #     # batch_size = x.shape[0]
-    #     f = self.emb_x(x.long())
-    #     bigru_x_h0 = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
-    #     s_0, _ = self.rnn_bigru_x(f, bigru_x_h0)
-    #
-    #     t = [torch.tanh(self.aff_init_dec(z))]
-    #     proj_key_0 = self.attention.key_layer(s_0)
-    #     prev_beams = [[[self.sos_idx], 0, 0, False]]
-    #     for j in range(max_len):
-    #         y_j1 = []
-    #         t_j1 = []
-    #         done_beams = []
-    #         for beam_idx, beam in enumerate(prev_beams):
-    #             if beam[3]:
-    #                 done_beams.append(beam)
-    #             else:
-    #                 y_j1.append(beam[0][-1])
-    #                 t_j1.append(t[j][beam[2]])
-    #
-    #         y_j1 = torch.unsqueeze(torch.tensor(y_j1), 1).to(self.device)
-    #         e_j = self.emb_y(y_j1.long())
-    #
-    #
-    #         t_j1 = torch.stack(t_j1).to(self.device)
-    #
-    #         proj_key = proj_key_0.expand(t_j1.shape[0] ,-1,-1)
-    #         s = s_0.expand(t_j1.shape[0] ,-1,-1)
-    #         x_mask = x_mask_0.expand(t_j1.shape[0] ,-1,-1)
-    #         c_j, _ = self.attention(t_j1.unsqueeze(1), proj_key, s, x_mask_0)
-    #         # pri
-    #         h0 = torch.cat((c_j, e_j), 2)
-    #         t_j, _ = self.rnn_gru_dec(t_j1.unsqueeze(1), torch.squeeze(h0, 1).unsqueeze(0)) # Changed due no batch
-    #
-    #         t.append(torch.squeeze(t_j, 1))
-    #
-    #         pre_out_j = self.aff_out_y(torch.cat((t_j, e_j), 2))
-    #         probs_j = F.softmax(pre_out_j, 2).squeeze(1)
-    #
-    #         new_beams = []
-    #         # Init with done beams
-    #         for i in range(probs_j.shape[0]):
-    #             for w in range(probs_j.shape[1]):
-    #                 prev_beam = prev_beams[i]
-    #                 done = False
-    #                 if w == self.eos_idx:
-    #                     done = True
-    #                 new_beam = [
-    #                     prev_beam[0] + [i],
-    #                     prev_beam[1] + torch.log(probs_j[i][w]).item(),
-    #                     i,
-    #                     done
-    #                 ]
-    #                 if len(new_beams) < beam_size:
-    #                     new_beams.append(new_beam)
-    #                     new_beams.sort(key=lambda x: x[1], reverse=True)
-    #                 else:
-    #                     if new_beams[-1][1] < new_beam[1]:
-    #                         new_beams[-1] = new_beam
-    #                         new_beams.sort(key=lambda x: x[1], reverse=True)
-    #         prev_beams = new_beams
 
 # Currently is not conditioned on the target sentence (should be an option)
 class SentEmbInfModel(nn.Module):
-    def __init__(self, emb_x, emb_dim, hidden_dim):
+    def __init__(self, emb_x, emb_dim, hidden_dim, dropout=0.3):
         super(SentEmbInfModel, self).__init__()
         self.emb_x = emb_x
 
         # TODO: init GRU cells to zero (page 44, thesis)
         self.rnn_gru_x = nn.GRU(emb_dim, hidden_dim, batch_first = True, bidirectional=True)
+        self.dropout = nn.Dropout(dropout)
 
         self.aff_u_hid = nn.Linear(2 * hidden_dim, hidden_dim)
         self.aff_u_out = nn.Linear(hidden_dim, hidden_dim)
@@ -517,6 +309,7 @@ class SentEmbInfModel(nn.Module):
         f = self.emb_x(x.long())
         f.detach()
         gru_x, w = self.rnn_gru_x(f)
+        gru_x = self.dropout(gru_x)
         h_x = torch.mean(gru_x, 1)
         mu = self.aff_u_out(F.relu(self.aff_u_hid(h_x)))
         sigma = F.softplus(self.aff_s_out(F.relu(self.aff_s_hid(h_x))))

@@ -58,7 +58,6 @@ def setup_model(vocab, emb_dim, hidden_dim, max_len, device):
         hidden_dim,
         max_len,
         device,
-        train=True,
         sos_idx=sos_idx,
         eos_idx=eos_idx,
         pad_idx=pad_idx

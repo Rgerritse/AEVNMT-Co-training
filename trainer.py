@@ -55,6 +55,7 @@ class Trainer():
         num_batches = len(dataloader)
         dataloader_iterator = iter(dataloader)
         for step in range(saved_step, self.num_steps):
+            self.model.train()
             start_time = time.time()
 
             try:
@@ -103,6 +104,7 @@ class Trainer():
                     self.eval(self.model, self.dataset_valid, vocab_size, padding_idx, batch_size_eval, step + 1, predictions_dir)
 
     def eval(self, model, dataset, vocab_size, padding_idx, batch_size_eval, step, predictions_dir):
+        self.model.eval()
         print("Evaluating...")
         if not os.path.exists(self.predictions_dir):
             os.mkdir(self.predictions_dir)
