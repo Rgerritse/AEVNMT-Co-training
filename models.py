@@ -6,39 +6,43 @@ import copy
 import numpy as np
 
 class AEVNMT(nn.Module):
-    def __init__(self, vocab, vocab_size, emb_dim, padding_idx, hidden_dim, max_len, device, dropout=0.3, sos_idx=None, eos_idx=None, pad_idx=None):
+    def __init__(self, vocab_src, vocab_tgt, config):
         super(AEVNMT, self).__init__()
-
-        self.device = device
-        self.vocab = vocab
-        # Initialize parameters
-        self.hidden_dim = hidden_dim
-        self.emb_dim = emb_dim
-        self.max_len = max_len
-        self.dropout = dropout
+        # self.device = device
+        self.vocab_src = vocab_src
+        self.vocab_tgt = vocab_tgt
 
         # Initialize priors
-        self.mu_prior = torch.tensor([0.0] * hidden_dim)
-        self.sigma_prior = torch.tensor([1.0] * hidden_dim)
+        self.mu_prior = torch.tensor([0.0] * config["hidden_dim"])
+        self.sigma_prior = torch.tensor([1.0] * config["hidden_dim"])
         self.normal = Normal(self.mu_prior, self.sigma_prior)
 
         # Initialize embeddings
-        self.emb_x = nn.Embedding(vocab_size, emb_dim, padding_idx=padding_idx)
-        self.emb_y = nn.Embedding(vocab_size, emb_dim, padding_idx=padding_idx)
-        self.emb_x.weight = self.emb_y.weight
+        self.emb_x = nn.Embedding(len(vocab_src), config["emb_dim"], padding_idx=vocab_src.pad())
+        self.emb_y = nn.Embedding(len(vocab_tgt), config["emb_dim"], padding_idx=vocab_tgt.pad())
+
+        # Misc
+        self.model_type = config["model_type"]
+        self.device =  torch.device(config["device"])
 
         # Initialize models
-        self.attention = BahdanauAttention(hidden_dim, query_size = 2 * hidden_dim + emb_dim)
-        self.source = SourceModel(self.vocab, self.emb_x, emb_dim, hidden_dim, vocab_size, dropout, sos_idx=sos_idx, eos_idx=eos_idx).to(device)
-        self.trans = TransModel(self.vocab, self.emb_x, self.emb_y, emb_dim, hidden_dim, vocab_size, self.attention, device, dropout, sos_idx=sos_idx, eos_idx=eos_idx, pad_idx=pad_idx).to(device)
-        self.enc = SentEmbInfModel(self.emb_x, emb_dim, hidden_dim).to(device)
+        self.attention = BahdanauAttention(config["hidden_dim"], query_size = 2 * config["hidden_dim"] + config["emb_dim"])
+        self.source = SourceModel(vocab_src, self.emb_x, config).to(self.device)
+        self.trans = TransModel(vocab_tgt, self.emb_x, self.emb_y, self.attention, config).to(self.device)
+        self.enc = SentEmbInfModel(self.emb_x, config).to(self.device)
+        # self.enc = SentEmbInfModel(self.emb_x, emb_dim, hidden_dim).to(device)
 
     def forward(self, x, x_mask, y=None, y_mask=None):
         mu_theta, sigma_theta = self.enc.forward(x)
 
-        batch_size = x.shape[0]
-        e = self.normal.sample(sample_shape=torch.tensor([batch_size])).to(self.device)
-        z = mu_theta + e * (sigma_theta ** 2)
+        if self.model_type == "nmt":
+            z = mu_theta
+        else:
+            raise ValueError("Invalid model type")
+
+        # batch_size = x.shape[0]
+        # e = self.normal.sample(sample_shape=torch.tensor([batch_size])).to(self.device)
+        # z = mu_theta + e * (sigma_theta ** 2)
 
         pre_out_x = self.source.forward(z, x=x)
         pre_out_y = self.trans.forward(x, x_mask, z, y=y)
@@ -49,23 +53,22 @@ class AEVNMT(nn.Module):
         with torch.no_grad():
             mu_theta, sigma_theta = self.enc.forward(x)
             # predictions = self.trans.beam_decode(x, x_mask, mu_theta, self.max_len)
-            predictions = self.trans.greedy_decode(x, x_mask, mu_theta, self.max_len)
+            predictions = self.trans.greedy_decode(x, x_mask, mu_theta)
             # print(predictions)
             return predictions
             # print(mu_theta.shape)
 
 class SourceModel(nn.Module):
-    def __init__(self, vocab, emb_x, emb_dim, hidden_dim, vocab_size, dropout, sos_idx=None, eos_idx=None):
+    def __init__(self, vocab_src, emb_x, config):
         super(SourceModel, self).__init__()
-        self.sos_idx = sos_idx
-        self.vocab = vocab
+        self.vocab = vocab_src
         self.emb_x = emb_x
 
         # self.tanh = nn.Tanh()
-        self.aff_init_lm = nn.Linear(hidden_dim, hidden_dim)
-        self.rnn_gru_lm = nn.GRU(emb_dim, hidden_dim, batch_first=True)
-        self.aff_out_x = nn.Linear(hidden_dim, vocab_size)
-        self.dropout = nn.Dropout(dropout)
+        self.aff_init_lm = nn.Linear(config["hidden_dim"], config["hidden_dim"])
+        self.rnn_gru_lm = nn.GRU(config["emb_dim"], config["hidden_dim"], batch_first=True)
+        self.aff_out_x = nn.Linear(config["hidden_dim"], len(vocab_src))
+        self.dropout = nn.Dropout(config["dropout"])
 
     def forward(self, z, x=None, max_len=None):
         if max_len == None:
@@ -84,27 +87,29 @@ class SourceModel(nn.Module):
 
 # Non-continious
 class TransModel(nn.Module):
-    def __init__(self, vocab, emb_x, emb_y, emb_dim, hidden_dim, vocab_size, attention, device, dropout=0.3, sos_idx=None, eos_idx=None, pad_idx=None):
+    def __init__(self, vocab_tgt, emb_x, emb_y, attention, config):
         super(TransModel, self).__init__()
-        self.vocab = vocab
-        self.sos_idx = sos_idx
-        self.eos_idx = eos_idx
-        self.pad_idx = pad_idx
+        self.vocab_tgt = vocab_tgt
+        self.sos_idx = self.vocab_tgt.index(config["sos"])
+        # self.eos_idx = eos_idx
+        # self.pad_idx = pad_idx
         self.emb_x = emb_x
         self.emb_y = emb_y
-        self.t_size = hidden_dim * 2 + emb_dim
+        self.t_size = config["hidden_dim"] * 2 + config["emb_dim"]
 
-        self.aff_init_enc = nn.Linear(hidden_dim, hidden_dim)
-        self.rnn_bigru_x = nn.GRU(emb_dim, hidden_dim, batch_first=True, bidirectional=True)
-        self.dropout = nn.Dropout(dropout)
+        self.aff_init_enc = nn.Linear(config["hidden_dim"], config["hidden_dim"])
+        self.rnn_bigru_x = nn.GRU(config["emb_dim"], config["hidden_dim"], batch_first=True, bidirectional=True)
+        self.dropout = nn.Dropout(config["dropout"])
 
         self.attention = attention
 
-        self.aff_init_dec = nn.Linear(hidden_dim, self.t_size)
+        self.aff_init_dec = nn.Linear(config["hidden_dim"], self.t_size)
         self.rnn_gru_dec = nn.GRU(self.t_size, self.t_size, batch_first=True)
 
-        self.aff_out_y = nn.Linear(self.t_size + emb_dim, vocab_size)
-        self.device = device
+        self.aff_out_y = nn.Linear(self.t_size + config["emb_dim"], len(vocab_tgt))
+
+        self.config = config
+        self.device =  torch.device(config["device"])
 
     def forward(self, x, x_mask, z, y=None, max_len=None):
         batch_size = x.shape[0]
@@ -139,7 +144,7 @@ class TransModel(nn.Module):
             pre_out.append(self.aff_out_y(torch.cat((t_j, e_j), 2)))
         return pre_out
 
-    def greedy_decode(self, x, x_mask, z, max_len):
+    def greedy_decode(self, x, x_mask, z):
         # print("-- Decode")
         batch_size = x.shape[0]
 
@@ -152,7 +157,7 @@ class TransModel(nn.Module):
         proj_key = self.attention.key_layer(s)
 
         sequences = torch.tensor([[self.sos_idx] for _ in range(batch_size)]).to(self.device)
-        for j in range(max_len):
+        for j in range(self.config["max_len"]):
             # print("Timestep: ", j)
             # print("Input: \n", self.vocab.string(torch.unsqueeze(sequences[:, j], 1)))
             c_j, _ = self.attention(t[j].unsqueeze(1), proj_key, s, x_mask)
@@ -291,19 +296,19 @@ class TransModel(nn.Module):
 
 # Currently is not conditioned on the target sentence (should be an option)
 class SentEmbInfModel(nn.Module):
-    def __init__(self, emb_x, emb_dim, hidden_dim, dropout=0.3):
+    def __init__(self, emb_x, config):
         super(SentEmbInfModel, self).__init__()
         self.emb_x = emb_x
 
         # TODO: init GRU cells to zero (page 44, thesis)
-        self.rnn_gru_x = nn.GRU(emb_dim, hidden_dim, batch_first = True, bidirectional=True)
-        self.dropout = nn.Dropout(dropout)
+        self.rnn_gru_x = nn.GRU(config["emb_dim"], config["hidden_dim"], batch_first = True, bidirectional=True)
+        self.dropout = nn.Dropout(config["dropout"])
 
-        self.aff_u_hid = nn.Linear(2 * hidden_dim, hidden_dim)
-        self.aff_u_out = nn.Linear(hidden_dim, hidden_dim)
+        self.aff_u_hid = nn.Linear(2 * config["hidden_dim"], config["hidden_dim"])
+        self.aff_u_out = nn.Linear(config["hidden_dim"], config["hidden_dim"])
 
-        self.aff_s_hid = nn.Linear(2 * hidden_dim, hidden_dim)
-        self.aff_s_out = nn.Linear(hidden_dim, hidden_dim)
+        self.aff_s_hid = nn.Linear(2 * config["hidden_dim"], config["hidden_dim"])
+        self.aff_s_out = nn.Linear(config["hidden_dim"], config["hidden_dim"])
 
     def forward(self, x):
         f = self.emb_x(x.long())

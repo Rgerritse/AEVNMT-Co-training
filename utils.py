@@ -1,65 +1,74 @@
 from fairseq.data import Dictionary, LanguagePairDataset
 from models import AEVNMT
-from tqdm import tqdm
+import torch
+# from tqdm import tqdm
 
-def get_vocab(vocab_path):
-    vocab = Dictionary()
-    with open(vocab_path, encoding='utf-8') as f_vocab:
-        for i, line in enumerate(f_vocab):
-            vocab.add_symbol(line.strip())
-    return vocab
+def get_vocabularies(config):
+    vocab_src = Dictionary(pad=config["pad"], eos=config["eos"], unk=config["unk"])
+    src_path = "{}/{}.{}".format(config["data_dir"], config["vocab_prefix"], config["src"])
+    with open(src_path, encoding="utf-8") as f_vocab_src:
+        for i, line in enumerate(f_vocab_src):
+            vocab_src.add_symbol(line.strip())
 
-def load_dataset(dataset, data_dir, src_lang, tgt_lang, vocab, num_sequences=None):
-    print("Loading {} dataset".format(dataset))
+    vocab_tgt = Dictionary(pad=config["pad"], eos=config["eos"], unk=config["unk"])
+    tgt_path = "{}/{}.{}".format(config["data_dir"], config["vocab_prefix"], config["tgt"])
+    with open(tgt_path) as f_vocab_src:
+        for i, line in enumerate(f_vocab_src):
+            vocab_tgt.add_symbol(line.strip())
+    return vocab_src, vocab_tgt
+
+
+# def get_vocab(vocab_path):
+#     vocab = Dictionary()
+#     with open(vocab_path, encoding='utf-8') as f_vocab:
+#         for i, line in enumerate(f_vocab):
+#             vocab.add_symbol(line.strip())
+#     return vocab
+#
+# def load_dataset(data_prefix, data_dir, src_lang, tgt_lang, vocab, num_sequences=None):
+def load_dataset(data_prefix, config, vocab_src, vocab_tgt, num_sequences=None):
+    print("Loading {} dataset".format(data_prefix))
+
     print("-- Reading source")
-    src_path = "{}/{}.{}".format(data_dir, dataset, src_lang)
-    src = []
+    src_path = "{}/{}.{}".format(config["data_dir"], data_prefix, config["src"])
+    src_seqs = []
     src_lengths = []
     with open(src_path, encoding='utf-8') as file:
         for i, line in enumerate(file):
             if num_sequences == None or i < num_sequences:
-                sentence = "<s> " + line.strip()
-                tokens = vocab.encode_line(sentence, add_if_not_exist=False)
-                src.append(tokens)
+                sequence = "{} {}".format(config["sos"], line.strip())
+                tokens = vocab_src.encode_line(sequence, add_if_not_exist=False)
+                src_seqs.append(tokens)
                 src_lengths.append(tokens.numel())
 
     print("-- Reading target")
-    tgt_path = "{}/{}.{}".format(data_dir, dataset, tgt_lang)
-    tgt = []
+    tgt_path = "{}/{}.{}".format(config["data_dir"], data_prefix, config["tgt"])
+    tgt_seqs = []
     tgt_lengths = []
     with open(tgt_path, encoding='utf-8') as file:
         for i, line in enumerate(file):
             if num_sequences == None or i < num_sequences:
-                sentence = line.strip() + " </s>"
-                tokens = vocab.encode_line(sentence, add_if_not_exist=False)
-                tgt.append(tokens)
+                sequence = "{} {}".format(line.strip(), config["eos"])
+                tokens = vocab_tgt.encode_line(sequence, add_if_not_exist=False)
+                tgt_seqs.append(tokens)
                 tgt_lengths.append(tokens.numel())
 
     dataset = LanguagePairDataset(
-            src=src,
+            src=src_seqs,
             src_sizes=src_lengths,
-            src_dict=vocab,
-            tgt=tgt,
+            src_dict=vocab_src,
+            tgt=tgt_seqs,
             tgt_sizes=src_lengths,
-            tgt_dict=vocab,
+            tgt_dict=vocab_tgt,
             left_pad_source=False
         )
     return dataset
 
-def setup_model(vocab, emb_dim, hidden_dim, max_len, device):
-    sos_idx = vocab.index("<s>")
-    eos_idx = vocab.index("</s>")
-    pad_idx = vocab.pad()
+def setup_model(vocab_src, vocab_tgt, config):
+    device = torch.device(config["device"])
     model = AEVNMT(
-        vocab,
-        len(vocab),
-        emb_dim,
-        vocab.pad(),
-        hidden_dim,
-        max_len,
-        device,
-        sos_idx=sos_idx,
-        eos_idx=eos_idx,
-        pad_idx=pad_idx
+        vocab_src,
+        vocab_tgt,
+        config
     ).to(device)
     return model
