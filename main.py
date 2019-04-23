@@ -1,6 +1,6 @@
 import argparse
 from trainer import Trainer
-from utils import get_vocabularies, load_dataset, setup_model
+from utils import get_vocabularies, load_dataset, load_dataset_joey, setup_model
 # from . import trainer
 
 def add_arguments(parser):
@@ -23,17 +23,22 @@ def add_arguments(parser):
     parser.add_argument("--model_type", type=str, default="nmt", help="nmt|aevnmt")
     parser.add_argument("--emb_dim", type=int, default=300, help="Dimensionality of word embeddings")
     parser.add_argument("--hidden_dim", type=int, default=256, help="Dimensionality of hidden units")
-    parser.add_argument("--dropout", type=int, default=0.3, help="Dropout")
+    parser.add_argument("--dropout", type=float, default=0.3, help="Dropout")
+    parser.add_argument("--word_dropout", type=float, default=0.1, help="Word Dropout")
     parser.add_argument("--max_len", type=int, default=50, help="Maximum sequence length")
 
     # Training
-    parser.add_argument("--learning_rate", type=int, default=0.0003, help="Learning rate")
+    parser.add_argument("--learning_rate", type=float, default=0.0003, help="Learning rate")
     parser.add_argument("--batch_size_train", type=int, default=32, help="Number of samples per batch during training")
-    parser.add_argument("--batch_size_eval", type=int, default=64, help="Number of samples per batch during evaluation")
     parser.add_argument("--num_steps", type=int, default=140000, help="Number of training steps")
     parser.add_argument("--steps_per_checkpoint", type=int, default=500, help="Number of steps per checkpoint")
-    parser.add_argument("--steps_per_eval", type=int, default=500, help="Number of steps per eval")
     parser.add_argument("--kl_annealing_steps", type=int, default=80000, help="Number of steps for kl annealing")
+
+    # Evaluation
+    parser.add_argument("--batch_size_eval", type=int, default=64, help="Number of samples per batch during evaluation")
+    parser.add_argument("--steps_per_eval", type=int, default=500, help="Number of steps per eval")
+    parser.add_argument("--beam_size", type=int, default=10, help="Number of partial hypotheses")
+    parser.add_argument("--length_penalty", type=int, default=1, help="Factor for length penalty")
 
     # Output
     parser.add_argument("--out_dir", type=str, default="output", help="Path to output directory")
@@ -43,6 +48,7 @@ def add_arguments(parser):
     # Misc
     parser.add_argument("--session", type=str, default=None, required=True,  help="Name of sessions, used for output files")
     parser.add_argument("--device", type=str, default="cuda", help="Device to train on: cuda|cpu")
+    parser.add_argument("--num_seqs", type=int, default=None, help="Number of sequences in dataset")
 
 def setup_config():
     return {
@@ -67,15 +73,20 @@ def setup_config():
         "hidden_dim":FLAGS.hidden_dim,
         "max_len":FLAGS.max_len,
         "dropout":FLAGS.dropout,
+        "word_dropout":FLAGS.word_dropout,
 
         # Training
         "learning_rate":FLAGS.learning_rate,
         "batch_size_train":FLAGS.batch_size_train,
-        "batch_size_eval":FLAGS.batch_size_eval,
         "num_steps":FLAGS.num_steps,
         "steps_per_checkpoint":FLAGS.steps_per_checkpoint,
-        "steps_per_eval":FLAGS.steps_per_eval,
         "kl_annealing_steps":FLAGS.kl_annealing_steps,
+
+        # Evaluation
+        "beam_size":FLAGS.beam_size,
+        "batch_size_eval":FLAGS.batch_size_eval,
+        "steps_per_eval":FLAGS.steps_per_eval,
+        "length_penalty":FLAGS.length_penalty,
 
         # Output
         "out_dir":FLAGS.out_dir,
@@ -84,16 +95,24 @@ def setup_config():
 
         # Misc
         "session":FLAGS.session,
-        "device":FLAGS.device
+        "device":FLAGS.device,
+        "num_seqs":FLAGS.num_seqs
     }
 
 def main():
     config = setup_config()
     vocab_src, vocab_tgt = get_vocabularies(config)
-    dataset_train = load_dataset(config["train_prefix"], config, vocab_src, vocab_tgt)
-    dataset_dev = load_dataset(config["dev_prefix"], config, vocab_src, vocab_tgt)
+    train_data, dev_data = load_dataset_joey(config)
+    # print(train_data.examples)
+# : development dataset
+# test_data: testdata set if given, otherwise None
+# src_vocab: source vocabulary extracted from training data
+# trg_vocab: target vocabulary extracted from training data
+    # asd
+    # dataset_train = load_dataset(config["train_prefix"], config, vocab_src, vocab_tgt, True)
+    # dataset_dev = load_dataset(config["dev_prefix"], config, vocab_src, vocab_tgt, False)
     model = setup_model(vocab_src, vocab_tgt, config)
-    trainer = Trainer(model, vocab_src, vocab_tgt, dataset_train, dataset_dev, config)
+    trainer = Trainer(model, vocab_src, vocab_tgt, train_data, dev_data, config)
     trainer.train_model()
 
 if __name__ == '__main__':

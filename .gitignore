@@ -1,7 +1,7 @@
 __pycache__
 data/
 venv/
+venv3.5/
 fairseq/
-checkpoints/
-predictions/
 AEVNMT-scores.txt
+output/

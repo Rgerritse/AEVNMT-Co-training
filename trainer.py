@@ -1,7 +1,10 @@
 import os, torch, time, subprocess, subprocess
+from joeynmt import data
+from joeynmt.batch import Batch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from tqdm import tqdm
+import numpy as np
 
 class Trainer():
     def __init__(self, model, vocab_src, vocab_tgt, dataset_train, dataset_dev, config):
@@ -17,7 +20,8 @@ class Trainer():
         print("Training...")
         checkpoints_path = "{}/{}".format(self.config["out_dir"], self.config["checkpoints_dir"])
 
-        dataloader = DataLoader(self.dataset_train, self.config["batch_size_train"], collate_fn=self.dataset_train.collater)
+        dataloader = data.make_data_iter(self.dataset_train, self.config["batch_size_train"], train=True)
+        # dataloader = DataLoader(self.dataset_train, self.config["batch_size_train"], collate_fn=self.dataset_train.collater)
         parameters = filter(lambda p: p.requires_grad, self.model.parameters())
         opt = torch.optim.Adam(parameters, lr=self.config["learning_rate"])
 
@@ -40,14 +44,30 @@ class Trainer():
             except StopIteration:
                 dataloader_iterator = iter(dataloader)
                 batch = next(dataloader_iterator)
+            batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=True)
 
+            # print(batch.src.tolist)
+            # batch = batch[0]
+            # print(batch)
+            # batch = Batch(batch, self.pad_index, use_cuda=True)
+            # asd
             opt.zero_grad()
-            x = batch["net_input"]["src_tokens"].to(self.device)
-            prev = batch["net_input"]["prev_output_tokens"].to(self.device)
-            y = batch["target"].to(self.device)
 
-            x_mask = (x != self.vocab_src.pad()).unsqueeze(-2)
-            prev_mask = (prev != self.vocab_src.pad())
+            x = batch.src
+            prev = batch.trg_input
+            y = batch.trg
+
+            x_mask = batch.src_mask
+            prev_mask = batch.trg_mask
+            # x_mask = (x != self.vocab_src.pad()).unsqueeze(-2)
+            # prev_mask = (prev != self.vocab_src.pad())
+
+            # x = batch["net_input"]["src_tokens"].to(self.device)
+            # prev = batch["net_input"]["prev_output_tokens"].to(self.device)
+            # y = batch["target"].to(self.device)
+            #
+            # x_mask = (x != self.vocab_src.pad()).unsqueeze(-2)
+            # prev_mask = (prev != self.vocab_src.pad())
 
             pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, prev, prev_mask)
             loss, losses = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, len(self.vocab_tgt), step + 1)
@@ -86,25 +106,40 @@ class Trainer():
         if not os.path.exists(checkpoints_path):
             os.makedirs(checkpoints_path)
 
-        dataloader = DataLoader(self.dataset_dev, self.config["batch_size_eval"], collate_fn=self.dataset_dev.collater)
+        # dataloader = DataLoader(self.dataset_dev, self.config["batch_size_eval"], collate_fn=self.dataset_dev.collater)
+        dataloader = data.make_data_iter(self.dataset_dev, self.config["batch_size_eval"], train=False)
+        # dataloader = DataLoader(self.dataset_dev, self.config["batch_size_eval"], collate_fn=self.dataset_dev.collater)
         file_name = '{}/{}/{}-{:06d}.txt'.format(self.config["out_dir"], self.config["predictions_dir"], self.config["session"], step)
         total_loss = 0
-        for batch in tqdm(dataloader):
-            x = batch["net_input"]["src_tokens"].to(self.device)
-            x_mask = (x != self.vocab_src.pad()).unsqueeze(-2)
+        for batch in tqdm(iter(dataloader)):
+            batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=True)
+        # for batch in tqdm(dataloader):
+            x = batch.src
+            # prev = batch.trg_input
+            # y = batch.trg
 
-            # y = batch["target"].to(self.device)
-            # y_mask = (y != padding_idx)
+            x_mask = batch.src_mask
+            # prev_mask = batch.trg_mask
+
+            # x = batch["net_input"]["src_tokens"].to(self.device)
+            # x_mask = (x != self.vocab_src.pad()).unsqueeze(-2)
 
             pred = self.model.predict(x, x_mask)
+            # sort_idxs = np.argsort(batch["id"])
+            # ordered_pred = torch.tensor([pred[i] for i in sort_idxs])
             # pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, y, y_mask)
             # loss, _ = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, vocab_size, step + 1, reduction='sum')
             # total_loss += loss
             # total_loss = self.compute_loss(pre_out_y, y, mu_theta, sigma_theta, vocab_size, step, reduction='sum')
-
-            decoded = self.vocab_tgt.string(pred).replace(self.config["sos"], '').replace(self.config["eos"], '').replace(self.config["pad"], '').strip()
+            # print(pred)
+            # asd
+            decoded = self.vocab_tgt.arrays_to_sentences(pred)
             with open(file_name, 'a') as the_file:
-                the_file.write(decoded + '\n')
+                for sent in decoded:
+                    the_file.write(' '.join(sent) + '\n')
+            # decoded = self.vocab_tgt.string(pred).replace(self.config["sos"], '').replace(self.config["eos"], '').replace(self.config["pad"], '').strip()
+            # decoded = self.vocab_tgt.string(ordered_pred).replace(self.config["sos"], '').replace(self.config["eos"], '').replace(self.config["pad"], '').strip()
+
 
         # print("Validation Loss: {:.2f}".format(total_loss))
 
