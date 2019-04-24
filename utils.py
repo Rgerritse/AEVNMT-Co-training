@@ -5,6 +5,7 @@ import torch
 # from tqdm import tqdm
 
 def get_vocabularies(config):
+    print("Constructing vocabularies...")
     src_path = "{}/{}.{}".format(config["data_dir"], config["vocab_prefix"], config["src"])
     src_vocab = vocabulary.build_vocab(
         field="src",
@@ -69,6 +70,7 @@ def load_dataset_torchtext(config):
     return train_data, dev_data
 
 def load_dataset_joey(config):
+    print("Creating datasets and vocabularies...")
     data_cfg = {
         "src": config["src"],
         "trg": config["tgt"],
@@ -80,8 +82,8 @@ def load_dataset_joey(config):
         "src_vocab": config["data_dir"] + "/" + config["vocab_prefix"] + "."+ config["src"],
         "trg_vocab": config["data_dir"] + "/" + config["vocab_prefix"] + "."+ config["tgt"]
     }
-    train_data, dev_data, _, _, _ = data.load_data(data_cfg)
-    return train_data, dev_data
+    train_data, dev_data, _, src_vocab, tgt_vocab = data.load_data(data_cfg)
+    return train_data, dev_data, src_vocab, tgt_vocab
 
     # vocab_src = Dictionary(pad=config["pad"], eos=config["eos"], unk=config["unk"])
     # vocab_src.add_symbol(config["sos"])

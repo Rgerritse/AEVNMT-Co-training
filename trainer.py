@@ -21,7 +21,6 @@ class Trainer():
         checkpoints_path = "{}/{}".format(self.config["out_dir"], self.config["checkpoints_dir"])
 
         dataloader = data.make_data_iter(self.dataset_train, self.config["batch_size_train"], train=True)
-        # dataloader = DataLoader(self.dataset_train, self.config["batch_size_train"], collate_fn=self.dataset_train.collater)
         parameters = filter(lambda p: p.requires_grad, self.model.parameters())
         opt = torch.optim.Adam(parameters, lr=self.config["learning_rate"])
 
@@ -34,6 +33,8 @@ class Trainer():
                 self.model.load_state_dict(state['state_dict'])
                 opt.load_state_dict(state['optimizer'])
 
+        max_bleu = 0.0
+        unimproved_bleu_checks = 0
         dataloader_iterator = iter(dataloader)
         for step in range(saved_step, self.config["num_steps"]):
             self.model.train()
@@ -46,11 +47,6 @@ class Trainer():
                 batch = next(dataloader_iterator)
             batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=True)
 
-            # print(batch.src.tolist)
-            # batch = batch[0]
-            # print(batch)
-            # batch = Batch(batch, self.pad_index, use_cuda=True)
-            # asd
             opt.zero_grad()
 
             x = batch.src
@@ -59,15 +55,6 @@ class Trainer():
 
             x_mask = batch.src_mask
             prev_mask = batch.trg_mask
-            # x_mask = (x != self.vocab_src.pad()).unsqueeze(-2)
-            # prev_mask = (prev != self.vocab_src.pad())
-
-            # x = batch["net_input"]["src_tokens"].to(self.device)
-            # prev = batch["net_input"]["prev_output_tokens"].to(self.device)
-            # y = batch["target"].to(self.device)
-            #
-            # x_mask = (x != self.vocab_src.pad()).unsqueeze(-2)
-            # prev_mask = (prev != self.vocab_src.pad())
 
             pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, prev, prev_mask)
             loss, losses = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, len(self.vocab_tgt), step + 1)
@@ -96,8 +83,14 @@ class Trainer():
 
             if (step + 1) % self.config["steps_per_eval"] == 0:
                 with torch.no_grad():
-                    self.eval(step + 1)
-                    # self.eval(self.model, self.dataset_valid, vocab_size, padding_idx, batch_size_eval, step + 1, predictions_dir)
+                    bleu_score = self.eval(step + 1)
+            if float(bleu_score) > max_bleu:
+                max_bleu = float(bleu_score)
+                unimproved_bleu_checks = 0
+            else:
+                unimproved_bleu_checks += 1
+                if unimproved_bleu_checks >= self.config["num_improv_checks"]:
+                    break
 
     def eval(self, step):
         self.model.eval()
@@ -113,55 +106,23 @@ class Trainer():
         total_loss = 0
         for batch in tqdm(iter(dataloader)):
             batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=True)
-        # for batch in tqdm(dataloader):
             x = batch.src
-            # prev = batch.trg_input
-            # y = batch.trg
 
             x_mask = batch.src_mask
-            # prev_mask = batch.trg_mask
-
-            # x = batch["net_input"]["src_tokens"].to(self.device)
-            # x_mask = (x != self.vocab_src.pad()).unsqueeze(-2)
 
             pred = self.model.predict(x, x_mask)
-            # sort_idxs = np.argsort(batch["id"])
-            # ordered_pred = torch.tensor([pred[i] for i in sort_idxs])
-            # pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, y, y_mask)
-            # loss, _ = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, vocab_size, step + 1, reduction='sum')
-            # total_loss += loss
-            # total_loss = self.compute_loss(pre_out_y, y, mu_theta, sigma_theta, vocab_size, step, reduction='sum')
-            # print(pred)
-            # asd
             decoded = self.vocab_tgt.arrays_to_sentences(pred)
             with open(file_name, 'a') as the_file:
                 for sent in decoded:
                     the_file.write(' '.join(sent) + '\n')
-            # decoded = self.vocab_tgt.string(pred).replace(self.config["sos"], '').replace(self.config["eos"], '').replace(self.config["pad"], '').strip()
-            # decoded = self.vocab_tgt.string(ordered_pred).replace(self.config["sos"], '').replace(self.config["eos"], '').replace(self.config["pad"], '').strip()
 
-
-        # print("Validation Loss: {:.2f}".format(total_loss))
-
-        # Remove BPE
-        # output_file_name = '{}/{}-{:06d}-out.txt'.format(predictions_dir, self.model_name, step)
-        # with open(output_file_name, "w") as file:
-        #     sub = subprocess.run(['sed', '-r', 's/(@@ )|(@@ ?$)//g', file_name], stdout=file)
-        #
-        # with open(output_file_name) as inp, open(output_file_name + ".detok", "w") as out:
-        #     subz = subprocess.run(['perl', 'data/mosesdecoder/scripts/tokenizer/detokenizer.perl', '-q'], stdin=inp, stdout=out)
-
-        # val_path = "data/setimes.tokenized.en-tr/valid.tr"
-
-        # sacrebleu = subprocess.run(['sacrebleu', '--input', output_file_name+".detok", self.valid_path, '--score-only'], stdout=subprocess.PIPE)
         valid_path = "{}/{}.{}".format(self.config["data_dir"], self.config["dev_prefix"], self.config["tgt"])
         sacrebleu = subprocess.run(['sacrebleu', '--input', file_name, valid_path, '--score-only'], stdout=subprocess.PIPE)
-        # print(sacrebleu.stdout.strip())
         bleu_score = sacrebleu.stdout.strip()
-        # bleu_score = sacrebleu.stdout.strip()
         scores_file = '{}/{}-scores.txt'.format(self.config["out_dir"], self.config["session"])
         with open(scores_file, 'a') as f_score:
             f_score.write("Step {}: {}\n".format(step, bleu_score))
+        return bleu_score
 
     def compute_loss(self, pre_out_x, x, pre_out_y, y, mu, sigma, vocab_size, step, reduction='mean'):
         y_stack = torch.stack(pre_out_y, 1).view(-1, vocab_size)

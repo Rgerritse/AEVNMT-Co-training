@@ -49,6 +49,7 @@ def add_arguments(parser):
     parser.add_argument("--session", type=str, default=None, required=True,  help="Name of sessions, used for output files")
     parser.add_argument("--device", type=str, default="cuda", help="Device to train on: cuda|cpu")
     parser.add_argument("--num_seqs", type=int, default=None, help="Number of sequences in dataset")
+    parser.add_argument("--num_improv_checks", type=int, default=5, help="Number of checks whether metric-score has improved")
 
 def setup_config():
     return {
@@ -96,13 +97,14 @@ def setup_config():
         # Misc
         "session":FLAGS.session,
         "device":FLAGS.device,
-        "num_seqs":FLAGS.num_seqs
+        "num_seqs":FLAGS.num_seqs,
+        "num_improv_checks":FLAGS.num_improv_checks
     }
 
 def main():
     config = setup_config()
-    vocab_src, vocab_tgt = get_vocabularies(config)
-    train_data, dev_data = load_dataset_joey(config)
+    # vocab_src, vocab_tgt = get_vocabularies(config)
+    train_data, dev_data, vocab_src, vocab_tgt = load_dataset_joey(config)
     # print(train_data.examples)
 # : development dataset
 # test_data: testdata set if given, otherwise None
