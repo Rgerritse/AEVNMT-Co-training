@@ -29,7 +29,7 @@ def add_arguments(parser):
 
     # Training
     parser.add_argument("--learning_rate", type=float, default=0.0003, help="Learning rate")
-    parser.add_argument("--batch_size_train", type=int, default=32, help="Number of samples per batch during training")
+    parser.add_argument("--batch_size_train", type=int, default=64, help="Number of samples per batch during training")
     parser.add_argument("--num_steps", type=int, default=140000, help="Number of training steps")
     parser.add_argument("--steps_per_checkpoint", type=int, default=500, help="Number of steps per checkpoint")
     parser.add_argument("--kl_annealing_steps", type=int, default=80000, help="Number of steps for kl annealing")

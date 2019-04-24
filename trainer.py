@@ -84,13 +84,14 @@ class Trainer():
             if (step + 1) % self.config["steps_per_eval"] == 0:
                 with torch.no_grad():
                     bleu_score = self.eval(step + 1)
-            if float(bleu_score) > max_bleu:
-                max_bleu = float(bleu_score)
-                unimproved_bleu_checks = 0
-            else:
-                unimproved_bleu_checks += 1
-                if unimproved_bleu_checks >= self.config["num_improv_checks"]:
-                    break
+                    
+                if float(bleu_score) > max_bleu:
+                    max_bleu = float(bleu_score)
+                    unimproved_bleu_checks = 0
+                else:
+                    unimproved_bleu_checks += 1
+                    if unimproved_bleu_checks >= self.config["num_improv_checks"]:
+                        break
 
     def eval(self, step):
         self.model.eval()
