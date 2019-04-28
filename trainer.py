@@ -2,6 +2,7 @@ import os, torch, time, subprocess, subprocess
 from joeynmt import data
 from joeynmt.batch import Batch
 from torch.utils.data import DataLoader
+from torch.nn.utils import clip_grad_norm_
 import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
@@ -58,7 +59,9 @@ class Trainer():
 
             pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, prev, prev_mask)
             loss, losses = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, len(self.vocab_tgt), step + 1)
+
             loss.backward()
+            clip_grad_norm_(self.model.parameters(), self.config["max_gradient_norm"])
             opt.step()
 
             batch_spd = (time.time() - start_time)
@@ -115,11 +118,6 @@ class Trainer():
                 for sent in decoded:
                     the_file.write(' '.join(sent) + '\n')
 
-        #UNDO BPE
-
-        #UNDO TOKENIZATION
-
-
         ref = "{}/{}.{}".format(self.config["data_dir"], self.config["dev_prefix"], self.config["tgt"])
         sacrebleu = subprocess.run(['./scripts/evaluate.sh',
             "{}/{}".format(self.config["out_dir"], self.config["predictions_dir"]),
@@ -128,9 +126,7 @@ class Trainer():
             ref,
             self.config["tgt"]],
             stdout=subprocess.PIPE)
-        # sacrebleu = subprocess.run(['sacrebleu', '--input', file_name, valid_path, '--score-only'], stdout=subprocess.PIPE)
         bleu_score = sacrebleu.stdout.strip()
-        # print(bleu_score)
         scores_file = '{}/{}-scores.txt'.format(self.config["out_dir"], self.config["session"])
         with open(scores_file, 'a') as f_score:
             f_score.write("Step {}: {}\n".format(step, bleu_score))
@@ -138,7 +134,8 @@ class Trainer():
 
     def compute_loss(self, pre_out_x, x, pre_out_y, y, mu, sigma, vocab_size, step, reduction='mean'):
         y_stack = torch.stack(pre_out_y, 1).view(-1, vocab_size)
-        y_loss = F.cross_entropy(y_stack, y.long().view(-1), reduction=reduction)
+        print("pad_index", self.vocab_tgt.stoi[self.config["pad"]])
+        y_loss = F.cross_entropy(y_stack, y.long().view(-1), ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction=reduction)
 
         # x_stack = torch.stack(pre_out_x, 1).view(-1, vocab_size)
         # x_loss = F.cross_entropy(x_stack, x.long().view(-1), reduction=reduction)

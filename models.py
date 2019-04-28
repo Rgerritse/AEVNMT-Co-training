@@ -14,9 +14,6 @@ class AEVNMT(nn.Module):
         self.vocab_src = vocab_src
         self.vocab_tgt = vocab_tgt
 
-        # print("vocab_src", vocab_src.stoi["<s>"])
-        # asd
-
         # Initialize priors
         self.mu_prior = torch.tensor([0.0] * config["hidden_dim"])
         self.sigma_prior = torch.tensor([1.0] * config["hidden_dim"])
@@ -60,7 +57,6 @@ class AEVNMT(nn.Module):
             mu_theta, _ = self.enc.forward(x)
             predictions = self.trans.beam_search(x, x_mask, mu_theta)
             return predictions
-            # print(mu_theta.shape)
 
 class SourceModel(nn.Module):
     def __init__(self, vocab_src, emb_x, config):
@@ -344,157 +340,6 @@ class TransModel(nn.Module):
                                         results["predictions"]],
                                        pad_value=self.pad_idx)
         return final_outputs
-
-
-    # def greedy_decode(self, x, x_mask, z):
-    #     # print("-- Decode")
-    #     batch_size = x.shape[0]
-    #
-    #     f = self.emb_x(x.long())
-    #     bigru_x_h0 = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
-    #     s, _ = self.rnn_bigru_x(f, bigru_x_h0)
-    #     s = self.dropout(s)
-    #
-    #     t = [torch.tanh(self.aff_init_dec(z))]
-    #     proj_key = self.attention.key_layer(s)
-    #
-    #     sequences = torch.tensor([[self.sos_idx] for _ in range(batch_size)]).to(self.device)
-    #     for j in range(self.config["max_len"]):
-    #         # print("Timestep: ", j)
-    #         # print("Input: \n", self.vocab.string(torch.unsqueeze(sequences[:, j], 1)))
-    #         c_j, _ = self.attention(t[j].unsqueeze(1), proj_key, s, x_mask)
-    #         e_j = self.emb_y(torch.unsqueeze(sequences[:, j], 1).long())
-    #
-    #         h0 = torch.cat((c_j, e_j), 2)
-    #         t_j, _ = self.rnn_gru_dec(t[j].unsqueeze(1), torch.squeeze(h0).unsqueeze(0))
-    #         t_j = self.dropout(t_j)
-    #         t.append(torch.squeeze(t_j))
-    #         pre_out_j = self.aff_out_y(torch.cat((t_j, e_j), 2))
-    #         probs_j = F.softmax(pre_out_j, 2).squeeze(1) # this necessary?
-    #         max_values, max_idxs = probs_j.max(1)
-    #         sequences = torch.cat((sequences, max_idxs.unsqueeze(1)), 1)
-    #     return sequences
-
-    # Node based???
-    # def beam_decode(self, x, x_mask, z, max_len, beam_size = 3):
-    #     batch_size = x.shape[0]
-    #
-    #     f = self.emb_x(x.long())
-    #     bigru_x_h0 = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
-    #     s, _ = self.rnn_bigru_x(f, bigru_x_h0)
-    #
-    #     t = [torch.tanh(self.aff_init_dec(z))]
-    #     proj_key = self.attention.key_layer(s)
-    #
-    #     done = [[0] for _ in range(batch_size)]
-    #     log_probs = [[0] for _ in range(batch_size)]
-    #     sequences = [[[self.sos_idx]] for _ in range(batch_size)]
-    #
-    #     for j in range(max_len):
-    #         partial_idxs = np.transpose(np.argwhere(torch.tensor(done)==0))
-    #         done_idxs = np.transpose(np.argwhere(torch.tensor(done)==1))
-    #         input = None
-    #         proj_key_input = None
-    #         t_j_input = None
-    #         x_mask_input = None
-    #         s_input = None
-    #         # print()
-    #         batches_idx = []
-    #         if partial_idxs.shape[0] == 0:
-    #             break
-    #
-    #         for batch, beam in partial_idxs:
-    #             if batch not in batches_idx:
-    #                 batches_idx.append(batch)
-    #             batch_idx = batches_idx.index(batch)
-    #             # batches_idx.append(batch)
-    #
-    #             sequence = torch.tensor([sequences[batch][beam][j]]).unsqueeze(0)
-    #             if input is None:
-    #                 input = sequence # slice to keep dim
-    #             else:
-    #                 input = torch.cat((input, sequence), 0)
-    #
-    #             if proj_key_input is None:
-    #                 proj_key_input = proj_key[batch:batch+1, :, :]
-    #             else:
-    #                 proj_key_input = torch.cat((proj_key_input, proj_key[batch:batch+1, :, :]), 0)
-    #
-    #             if t_j_input is None:
-    #                 t_j_input = t[j][batch_idx:batch_idx+1, :]
-    #             else:
-    #                 t_j_input = torch.cat((t_j_input, t[j][batch_idx:batch_idx+1, :]), 0)
-    #
-    #             if x_mask_input is None:
-    #                 x_mask_input = x_mask[batch:batch+1, :]
-    #             else:
-    #                 x_mask_input = torch.cat((x_mask_input, x_mask[batch:batch+1, :]), 0)
-    #
-    #             if s_input is None:
-    #                 s_input = s[batch:batch+1, :, :]
-    #             else:
-    #                 s_input = torch.cat((s_input, s[batch:batch+1, :, :]), 0)
-    #
-    #         e_j = self.emb_y(input.to(self.device))
-    #         t_j_input = t_j_input.unsqueeze(1)
-    #         c_j, _ = self.attention(t_j_input, proj_key_input, s_input, x_mask_input)
-    #
-    #         h0 = torch.cat((c_j, e_j), 2)
-    #         t_j, _ = self.rnn_gru_dec(t_j_input, h0.squeeze(1).unsqueeze(0))
-    #         t.append(t_j.squeeze(1))
-    #         pre_out_j = self.aff_out_y(torch.cat((t_j, e_j), 2))
-    #         log_probs_j = torch.log(F.softmax(pre_out_j, 2).squeeze(1))
-    #         max_probs, max_idx = torch.sort(log_probs_j, 1)
-    #         idx = torch.narrow(max_idx, 1, -beam_size, beam_size)
-    #         values = torch.narrow(max_probs, 1, -beam_size, beam_size)
-    #
-    #         new_sequences = [[] for _ in range(batch_size)]
-    #         new_log_probs = [[] for _ in range(batch_size)]
-    #         new_done = [[] for _ in range(batch_size)]
-    #         for i, (batch, beam) in enumerate(done_idxs):
-    #             new_sequences[batch].append(sequences[batch][beam] + [self.pad_idx])
-    #             new_log_probs[batch].append(log_probs[batch][beam])
-    #             new_done[batch].append(done[batch][beam])
-    #
-    #         for i, (batch, beam) in enumerate(partial_idxs):
-    #             new_beams = []
-    #             new_probs = []
-    #             new_dones = []
-    #             for b in range(beam_size):
-    #                 new_beams.append(sequences[batch][beam] + [idx[i][b].item()])
-    #                 new_probs.append(log_probs[batch][beam] + values[i][b].item())
-    #                 if idx[i][b].item() == self.eos_idx:
-    #                     new_dones.append(1)
-    #                 else:
-    #                     new_dones.append(0)
-    #                     # print
-    #             new_sequences[batch].extend(new_beams)
-    #             new_log_probs[batch].extend(new_probs)
-    #             new_done[batch].extend(new_dones)
-    #
-    #         # Cutoff at top beam-size
-    #         for b in range(batch_size):
-    #             batch = new_log_probs[b]
-    #             # print("batch: ", batch)
-    #             sorted_batch = sorted(range(len(batch)), key=lambda k: batch[k])
-    #             top_idx = sorted_batch[-beam_size:]
-    #             top_sequences = [new_sequences[b][i] for i in top_idx]
-    #             top_log_probs = [new_log_probs[b][i] for i in top_idx]
-    #             top_done = [new_done[b][i] for i in top_idx]
-    #             new_sequences[b] = top_sequences
-    #             new_log_probs[b] = top_log_probs
-    #             new_done[b] = top_done
-    #         sequences = new_sequences
-    #         log_probs = new_log_probs
-    #         done = new_done
-    #         # print(sequences)
-    #
-    #     # Get only the top
-    #     for b in range(batch_size):
-    #         batch = log_probs[b]
-    #         idx = np.argmax(batch)
-    #         sequences[b] = sequences[b][idx]
-    #     return torch.tensor(sequences)
 
 # Currently is not conditioned on the target sentence (should be an option)
 class SentEmbInfModel(nn.Module):

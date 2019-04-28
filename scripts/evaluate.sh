@@ -11,9 +11,11 @@ DETOK_FILE="${PRED_DIR}/${SESSION}-${STEP}.detok.${LANG}"
 
 # UNDO BPE
 sed -r 's/(@@ )|(@@ ?$)//g' $FILE > $UNBPE_FILE
+rm $FILE
 
 # DETOKENIZE
 perl data/mosesdecoder/scripts/tokenizer/detokenizer.perl -q < $UNBPE_FILE > $DETOK_FILE
+rm $UNBPE_FILE
 
 # Compute bleu
 sacrebleu --input $DETOK_FILE $REF --score-only

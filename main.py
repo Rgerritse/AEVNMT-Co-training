@@ -33,6 +33,7 @@ def add_arguments(parser):
     parser.add_argument("--num_steps", type=int, default=140000, help="Number of training steps")
     parser.add_argument("--steps_per_checkpoint", type=int, default=500, help="Number of steps per checkpoint")
     parser.add_argument("--kl_annealing_steps", type=int, default=80000, help="Number of steps for kl annealing")
+    parser.add_argument("--max_gradient_norm", type=float, default=1.0, help="Max norm of the gradients")
 
     # Evaluation
     parser.add_argument("--batch_size_eval", type=int, default=64, help="Number of samples per batch during evaluation")
@@ -82,6 +83,7 @@ def setup_config():
         "num_steps":FLAGS.num_steps,
         "steps_per_checkpoint":FLAGS.steps_per_checkpoint,
         "kl_annealing_steps":FLAGS.kl_annealing_steps,
+        "max_gradient_norm":FLAGS.max_gradient_norm,
 
         # Evaluation
         "beam_size":FLAGS.beam_size,
