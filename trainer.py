@@ -84,7 +84,7 @@ class Trainer():
             if (step + 1) % self.config["steps_per_eval"] == 0:
                 with torch.no_grad():
                     bleu_score = self.eval(step + 1)
-                    
+
                 if float(bleu_score) > max_bleu:
                     max_bleu = float(bleu_score)
                     unimproved_bleu_checks = 0
@@ -100,10 +100,8 @@ class Trainer():
         if not os.path.exists(checkpoints_path):
             os.makedirs(checkpoints_path)
 
-        # dataloader = DataLoader(self.dataset_dev, self.config["batch_size_eval"], collate_fn=self.dataset_dev.collater)
         dataloader = data.make_data_iter(self.dataset_dev, self.config["batch_size_eval"], train=False)
-        # dataloader = DataLoader(self.dataset_dev, self.config["batch_size_eval"], collate_fn=self.dataset_dev.collater)
-        file_name = '{}/{}/{}-{:06d}.txt'.format(self.config["out_dir"], self.config["predictions_dir"], self.config["session"], step)
+        file_name = '{}/{}/{}-{:06d}.raw.{}'.format(self.config["out_dir"], self.config["predictions_dir"], self.config["session"], step, self.config["tgt"])
         total_loss = 0
         for batch in tqdm(iter(dataloader)):
             batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=True)
@@ -117,9 +115,22 @@ class Trainer():
                 for sent in decoded:
                     the_file.write(' '.join(sent) + '\n')
 
-        valid_path = "{}/{}.{}".format(self.config["data_dir"], self.config["dev_prefix"], self.config["tgt"])
-        sacrebleu = subprocess.run(['sacrebleu', '--input', file_name, valid_path, '--score-only'], stdout=subprocess.PIPE)
+        #UNDO BPE
+
+        #UNDO TOKENIZATION
+
+
+        ref = "{}/{}.{}".format(self.config["data_dir"], self.config["dev_prefix"], self.config["tgt"])
+        sacrebleu = subprocess.run(['./scripts/evaluate.sh',
+            "{}/{}".format(self.config["out_dir"], self.config["predictions_dir"]),
+            self.config["session"],
+            '{:06d}'.format(step),
+            ref,
+            self.config["tgt"]],
+            stdout=subprocess.PIPE)
+        # sacrebleu = subprocess.run(['sacrebleu', '--input', file_name, valid_path, '--score-only'], stdout=subprocess.PIPE)
         bleu_score = sacrebleu.stdout.strip()
+        # print(bleu_score)
         scores_file = '{}/{}-scores.txt'.format(self.config["out_dir"], self.config["session"])
         with open(scores_file, 'a') as f_score:
             f_score.write("Step {}: {}\n".format(step, bleu_score))

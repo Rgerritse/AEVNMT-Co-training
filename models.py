@@ -147,7 +147,7 @@ class TransModel(nn.Module):
                 # print("torch.unsqueeze(y[:, j], 1: ", torch.unsqueeze(y[:, j], 1).long().shape)
                 e_j = self.emb_y(torch.unsqueeze(y[:, j], 1).long())
             # print("e_j.shape: ", e_j.shape)
-            e_j = self.word_dropout(e_j)
+            # e_j = self.word_dropout(e_j)
 
 
             h0 = torch.cat((c_j, e_j), 2)
