@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+cd ..
 mkdir -p data
 cd data
 

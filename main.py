@@ -120,7 +120,6 @@ def main():
     trainer.train_model()
 
 if __name__ == '__main__':
-    # REFER TO train_old.py
     parser = argparse.ArgumentParser()
     add_arguments(parser)
     FLAGS, unparsed = parser.parse_known_args()
