@@ -1,6 +1,7 @@
 # from fairseq.data import Dictionary, LanguagePairDataset
 from joeynmt import vocabulary, data
-from models import AEVNMT
+# from models import AEVNMT
+from models.baseline import Baseline
 import torch
 # from tqdm import tqdm
 
@@ -64,8 +65,6 @@ def load_dataset_torchtext(config):
         exts=("." + config["src"], "." + config["tgt"]),
         fields=(src_field, trg_field)
     )
-
-
 
     return train_data, dev_data
 
@@ -157,9 +156,16 @@ def load_dataset(data_prefix, config, vocab_src, vocab_tgt, shuffle, num_sequenc
     # data_cfg["src"] = config["src"]
 def setup_model(vocab_src, vocab_tgt, config):
     device = torch.device(config["device"])
-    model = AEVNMT(
-        vocab_src,
-        vocab_tgt,
-        config
-    ).to(device)
+    if config["model_type"] == "nmt":
+        model = Baseline(
+            vocab_src,
+            vocab_tgt,
+            config
+        ).to(device)
+    else:
+        model = AEVNMT(
+            vocab_src,
+            vocab_tgt,
+            config
+        ).to(device)
     return model

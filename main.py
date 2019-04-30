@@ -21,7 +21,8 @@ def add_arguments(parser):
 
     # Model
     parser.add_argument("--model_type", type=str, default="nmt", help="nmt|aevnmt")
-    parser.add_argument("--emb_dim", type=int, default=300, help="Dimensionality of word embeddings")
+    parser.add_argument("--emb_init_std", type=float, default=0.01, help="Standard deviation of embeddings initialization")
+    parser.add_argument("--emb_dim", type=int, default=256, help="Dimensionality of word embeddings")
     parser.add_argument("--hidden_dim", type=int, default=256, help="Dimensionality of hidden units")
     parser.add_argument("--dropout", type=float, default=0.3, help="Dropout")
     parser.add_argument("--word_dropout", type=float, default=0.1, help="Word Dropout")
@@ -71,6 +72,7 @@ def setup_config():
 
         # Model
         "model_type":FLAGS.model_type,
+        "emb_init_std":FLAGS.emb_init_std,
         "emb_dim":FLAGS.emb_dim,
         "hidden_dim":FLAGS.hidden_dim,
         "max_len":FLAGS.max_len,

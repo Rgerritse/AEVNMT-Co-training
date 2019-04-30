@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 from torch.distributions.normal import Normal
+from torch.distributions.bernoulli import Bernoulli
 import torch.nn.functional as F
 import copy
 import numpy as np
 from joeynmt.helpers import tile
-
 
 class AEVNMT(nn.Module):
     def __init__(self, vocab_src, vocab_tgt, config):
@@ -21,7 +21,9 @@ class AEVNMT(nn.Module):
 
         # Initialize embeddings
         self.emb_x = nn.Embedding(len(vocab_src), config["emb_dim"], padding_idx=vocab_src.stoi[config["pad"]])
+        nn.init.normal_(self.emb_x.weight, std=config["emb_init_std"])
         self.emb_y = nn.Embedding(len(vocab_tgt), config["emb_dim"], padding_idx=vocab_tgt.stoi[config["pad"]])
+        nn.init.normal_(self.emb_y.weight, std=config["emb_init_std"])
 
         # Misc
         self.model_type = config["model_type"]
@@ -29,11 +31,10 @@ class AEVNMT(nn.Module):
         self.device =  torch.device(config["device"])
 
         # Initialize models
-        self.attention = BahdanauAttention(config["hidden_dim"], query_size = 2 * config["hidden_dim"] + config["emb_dim"])
+        self.attention = BahdanauAttention(config["hidden_dim"])
         self.source = SourceModel(vocab_src, self.emb_x, config).to(self.device)
         self.trans = TransModel(vocab_tgt, self.emb_x, self.emb_y, self.attention, config).to(self.device)
         self.enc = SentEmbInfModel(self.emb_x, config).to(self.device)
-        # self.enc = SentEmbInfModel(self.emb_x, emb_dim, hidden_dim).to(device)
 
     def forward(self, x, x_mask, y=None, y_mask=None):
         mu_theta, sigma_theta = self.enc.forward(x)
@@ -42,10 +43,6 @@ class AEVNMT(nn.Module):
             z = mu_theta
         else:
             raise ValueError("Invalid model type")
-
-        # batch_size = x.shape[0]
-        # e = self.normal.sample(sample_shape=torch.tensor([batch_size])).to(self.device)
-        # z = mu_theta + e * (sigma_theta ** 2)
 
         pre_out_x = self.source.forward(z, x=x)
         pre_out_y = self.trans.forward(x, x_mask, z, y=y)
@@ -102,52 +99,89 @@ class TransModel(nn.Module):
         self.t_size = config["hidden_dim"] * 2 + config["emb_dim"]
 
         self.aff_init_enc = nn.Linear(config["hidden_dim"], config["hidden_dim"])
-        self.rnn_bigru_x = nn.GRU(config["emb_dim"], config["hidden_dim"], batch_first=True, bidirectional=True)
+        self.rnn_bigru_x = nn.GRU(config["hidden_dim"], config["hidden_dim"], batch_first=True, bidirectional=True)
         self.dropout = nn.Dropout(config["dropout"])
         self.word_dropout = nn.Dropout(config["word_dropout"])
 
         self.attention = attention
 
-        self.aff_init_dec = nn.Linear(config["hidden_dim"], self.t_size)
-        self.rnn_gru_dec = nn.GRU(self.t_size, self.t_size, batch_first=True)
+        # self.aff_init_dec = nn.Linear(config["hidden_dim"], self.t_size)
+        self.aff_init_dec = nn.Linear(config["hidden_dim"], config["hidden_dim"])
+        self.rnn_gru_dec = nn.GRU(2 * config["hidden_dim"], 2 * config["hidden_dim"], batch_first=True)
 
         self.aff_out_y = nn.Linear(self.t_size + config["emb_dim"], len(vocab_tgt))
 
         self.config = config
         self.device =  torch.device(config["device"])
 
+    def forward_step():
+        print("forward_step")
+
     def forward(self, x, x_mask, z, y=None, max_len=None):
         batch_size = x.shape[0]
 
         f = self.emb_x(x.long())
         bigru_x_h0 = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
-        s, _ = self.rnn_bigru_x(f, bigru_x_h0)
-        s = self.dropout(s)
+        encoder_output, encoder_hidden = self.rnn_bigru_x(f, bigru_x_h0)
+        fwd_encoder_hidden = encoder_hidden[0:encoder_hidden.size(0):2]
+        bwd_encoder_hidden = encoder_hidden[1:encoder_hidden.size(0):2]
+        encoder_hidden = torch.cat([fwd_encoder_hidden, bwd_encoder_hidden], dim=2)
+
+        # print(encoder_hidden)
+        # print(encoder_hidden.shape)
+        # print("=========================")
+        # s = self.dropout(s)
 
         if max_len == None:
             max_len = y.shape[-1]
 
+
+        # print("encoder_output: ", encoder_output.shape)
+
         t = [torch.tanh(self.aff_init_dec(z))]
-        proj_key = self.attention.key_layer(s)
+        proj_key = self.attention.key_layer(encoder_hidden.permute(1,0,2))
+
+
+        # print("z: ", z.shape)
+        # print("s: ", s.shape)
+        # print("t[j]: ", t[0].unsqueeze(1).shape)
+        # print("proj_key: ", proj_key.shape)
+
 
         pre_out = []
         for j in range(max_len):
-            # print("Timestep: ", j)
-            c_j, _ = self.attention(t[j].unsqueeze(1), proj_key, s, x_mask)
+            print("x: ", x.shape)
+            print("t_j: ", t[j].unsqueeze(1).shape)
+            print("proj_key: ", proj_key.shape)
+            print("encoder_hidden: ", encoder_hidden.shape)
+            print("encoder_output: ", encoder_output.shape)
+            print("x_mask: ", x_mask.shape)
+            c_j, _ = self.attention(t[j].unsqueeze(1), proj_key, encoder_hidden, x_mask)
+            asd
             if j == 0:
                 start_seq = torch.tensor([[self.sos_idx] for _ in range(batch_size)]).to(self.device)
-                # print("input: \n", self.vocab.string(start_seq))
-                e_j = self.emb_y(start_seq.long())
+                decoder_input = start_seq.long()
             else:
-                # print("input: \n", self.vocab.string(torch.unsqueeze(y[:, j-1], 1)))
-                # print("torch.unsqueeze(y[:, j], 1: ", torch.unsqueeze(y[:, j], 1).long().shape)
-                e_j = self.emb_y(torch.unsqueeze(y[:, j], 1).long())
-            # print("e_j.shape: ", e_j.shape)
-            # e_j = self.word_dropout(e_j)
+                decoder_input = torch.unsqueeze(y[:, j], 1).long()
 
 
+
+                # Word dropout (excluded starting symbols)
+                rw = Bernoulli(self.config["word_dropout"]).sample((decoder_input.shape[0],))
+                unk_idx = rw.nonzero().squeeze(1)
+                decoder_input[unk_idx, 0] = torch.tensor([self.pad_idx])
+
+            e_j = self.emb_y(decoder_input)
+
+            print("c_j: ", c_j.shape)
+            print("e_j: ", e_j.shape)
             h0 = torch.cat((c_j, e_j), 2)
+            # print("h0: ", h0.shape)
+            print("t_j: ", t[j].unsqueeze(1).shape)
+            print("h0: ", torch.squeeze(h0).unsqueeze(0).shape)
             t_j, _ = self.rnn_gru_dec(t[j].unsqueeze(1), torch.squeeze(h0).unsqueeze(0))
+            print("t_j: ", t_j.shape)
+            asd
             t_j = self.dropout(t_j)
             t.append(torch.squeeze(t_j))
             pre_out.append(self.aff_out_y(torch.cat((t_j, e_j), 2)))
@@ -155,14 +189,12 @@ class TransModel(nn.Module):
 
     # Based on joeynmt beam search
     def beam_search(self, x, x_mask, z, n_best = 1):
-        # print(self.vocab_tgt.string(x))
-
         size = self.config["beam_size"]
         batch_size = x_mask.shape[0]
 
         f = self.emb_x(x.long())
         bigru_x_h0 = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
-        s, _ = self.rnn_bigru_x(f, bigru_x_h0)
+        s, encoder_state = self.rnn_bigru_x(f, bigru_x_h0)
         s = self.dropout(s).contiguous()
 
         t_j = torch.tanh(self.aff_init_dec(z))
@@ -189,15 +221,9 @@ class TransModel(nn.Module):
             device=self.device
         )
 
-        # print("batch_offset: ", batch_offset)
-        # print("beam_offset: ", beam_offset)
-        # print("alive_seq: ", alive_seq)
-
         topk_log_probs = (torch.tensor([0.0] + [float("-inf")] * (size - 1),
                                    device=self.device).repeat(
                                     batch_size))
-
-        # print("topk_log_probs: ", topk_log_probs)
 
         # Structure that holds finished hypotheses.
         hypotheses = [[] for _ in range(batch_size)]
@@ -208,13 +234,8 @@ class TransModel(nn.Module):
         results["gold_score"] = [0] * batch_size
 
         for step in range(self.config["max_len"]):
-            # print("step: ", step)
             decoder_input = alive_seq[:, -1].view(-1, 1)
             e_j = self.emb_y(decoder_input)
-            # print("t_j: ", t_j.shape)
-            # print("proj_key: ", proj_key.shape)
-            # print("s: ", s.shape)
-            # print("src_mask: ", src_mask.shape)
 
             c_j, _ = self.attention(t_j.unsqueeze(1), proj_key, s, src_mask)
 
@@ -225,7 +246,6 @@ class TransModel(nn.Module):
             t_j = t_j.squeeze(1)
 
             log_probs = F.log_softmax(out, dim=-1).squeeze(1)
-            # print("log_probs: ", log_probs)
 
             # multiply probs by the beam probability (=add logprobs)
             log_probs += topk_log_probs.view(-1).unsqueeze(1)
@@ -310,17 +330,6 @@ class TransModel(nn.Module):
                 s = s.index_select(0, select_indices)
                 src_mask = src_mask.index_select(0, select_indices)
 
-                # if isinstance(hidden, tuple):
-                #     # for LSTMs, states are tuples of tensors
-                #     h, c = hidden
-                #     h = h.index_select(1, select_indices)
-                #     c = c.index_select(1, select_indices)
-                #     hidden = (h, c)
-                # else:
-                #     # for GRUs, states are single tensors
-                #     hidden = hidden.index_select(1, select_indices)
-                #
-                # att_vectors = att_vectors.index_select(0, select_indices)
         def pad_and_stack_hyps(hyps, pad_value):
             filled = np.ones((len(hyps), max([h.shape[0] for h in hyps])),
                          dtype=int) * pad_value
@@ -329,13 +338,6 @@ class TransModel(nn.Module):
                     filled[j, k] = i
             return filled
 
-        # for pred in results["predictions"]:
-        #     print(self.vocab_tgt.string(pred[0]))
-            # print(self.vocab_tgt.string(pred))
-        # print(results["predictions"])
-        # print(self.vocab_tgt.string(torch.tensor(results["predictions"])))
-        # print("sequences: ", self.vocab_tgt.string(torch.tensor(results["predictions"])))
-        # print(results["predictions"])
         final_outputs = pad_and_stack_hyps([r[0].cpu().numpy() for r in
                                         results["predictions"]],
                                        pad_value=self.pad_idx)
@@ -377,6 +379,7 @@ class BahdanauAttention(nn.Module):
         # We assume a bi-directional encoder so key_size is 2*hidden_size
         key_size = 2 * hidden_size if key_size is None else key_size
         query_size = hidden_size if query_size is None else query_size
+        print("query_size: ", query_size )
 
         self.key_layer = nn.Linear(key_size, hidden_size, bias=False)
         self.query_layer = nn.Linear(query_size, hidden_size, bias=False)
@@ -390,6 +393,7 @@ class BahdanauAttention(nn.Module):
 
         # We first project the query (the decoder state).
         # The projected keys (the encoder states) were already pre-computated.
+        print("query: ", query.shape)
         query = self.query_layer(query)
 
         # Calculate scores.

@@ -57,8 +57,10 @@ class Trainer():
             x_mask = batch.src_mask
             prev_mask = batch.trg_mask
 
-            pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, prev, prev_mask)
-            loss, losses = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, len(self.vocab_tgt), step + 1)
+            logits_y = self.model.forward(x, x_mask, prev, prev_mask)
+            # pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, prev, prev_mask)
+            loss = self.compute_loss(logits_y, y, len(self.vocab_tgt), step + 1)
+            # loss, losses = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, len(self.vocab_tgt), step + 1)
 
             loss.backward()
             clip_grad_norm_(self.model.parameters(), self.config["max_gradient_norm"])
@@ -66,11 +68,10 @@ class Trainer():
 
             batch_spd = (time.time() - start_time)
 
-            print("Step {:06d}/{:06d} , Total Loss: {:.2f}, Y-Loss: {:.2f}, Batch time: {:.1f}s".format(
+            print("Step {:06d}/{:06d} , Total Loss: {:.2f}, Batch time: {:.1f}s".format(
                 step + 1,
                 self.config["num_steps"],
                 loss.item(),
-                losses[0].item(),
                 batch_spd)
             )
 
@@ -132,10 +133,11 @@ class Trainer():
             f_score.write("Step {}: {}\n".format(step, bleu_score))
         return bleu_score
 
-    def compute_loss(self, pre_out_x, x, pre_out_y, y, mu, sigma, vocab_size, step, reduction='mean'):
-        y_stack = torch.stack(pre_out_y, 1).view(-1, vocab_size)
-        print("pad_index", self.vocab_tgt.stoi[self.config["pad"]])
-        y_loss = F.cross_entropy(y_stack, y.long().view(-1), ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction=reduction)
+    # def compute_loss(self, pre_out_x, x, pre_out_y, y, mu, sigma, vocab_size, step, reduction='mean'):
+    def compute_loss(self, logits_y, y, vocab_size, step, reduction='mean'):
+        # y_stack = torch.stack(pre_out_y, 1).view(-1, vocab_size)
+        # print("pad_index", self.vocab_tgt.stoi[self.config["pad"]])
+        y_loss = F.cross_entropy(logits_y.view(-1, vocab_size), y.long().view(-1), ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction=reduction)
 
         # x_stack = torch.stack(pre_out_x, 1).view(-1, vocab_size)
         # x_loss = F.cross_entropy(x_stack, x.long().view(-1), reduction=reduction)
@@ -146,10 +148,10 @@ class Trainer():
 
 
         loss = y_loss
-        losses = [y_loss]
+        # losses = [y_loss]
         # loss = y_loss + x_loss + KL_loss
         # losses = [y_loss, x_loss, KL_loss]
-        return loss, losses
+        return loss
 
     def compute_diagonal_gaussian_kl(self, mu, sigma):
         var = sigma ** 2
