@@ -156,7 +156,7 @@ def load_dataset(data_prefix, config, vocab_src, vocab_tgt, shuffle, num_sequenc
     # data_cfg["src"] = config["src"]
 def setup_model(vocab_src, vocab_tgt, config):
     device = torch.device(config["device"])
-    if config["model_type"] == "nmt":
+    if config["model_type"] == "nmt" or config["model_type"] == "aevnmt":
         model = Baseline(
             vocab_src,
             vocab_tgt,

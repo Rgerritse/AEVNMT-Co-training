@@ -1,7 +1,6 @@
 import argparse
 from trainer import Trainer
 from utils import get_vocabularies, load_dataset, load_dataset_joey, setup_model
-# from . import trainer
 
 def add_arguments(parser):
     # Data

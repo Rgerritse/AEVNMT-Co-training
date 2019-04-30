@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.distributions.normal import Normal
 from torch.distributions.bernoulli import Bernoulli
 from joeynmt.attention import BahdanauAttention, LuongAttention
 from joeynmt.helpers import tile
@@ -21,32 +22,42 @@ class Baseline(nn.Module):
         nn.init.normal_(self.emb_x.weight, std=config["emb_init_std"])
         nn.init.normal_(self.emb_y.weight, std=config["emb_init_std"])
 
+        self.mu_prior = torch.tensor([0.0] * config["hidden_dim"])
+        self.sigma_prior = torch.tensor([1.0] * config["hidden_dim"])
+        self.normal = Normal(self.mu_prior, self.sigma_prior)
+
         if config["attention"] == "bahdanau":
             self.attention = BahdanauAttention(config["hidden_dim"], 2 * config["hidden_dim"], config["hidden_dim"])
         elif config["attention"] == "luong":
             self.attention = LuongAttention(config["hidden_dim"], 2 * config["hidden_dim"])
+
         self.inference = InferenceModel(self.emb_x, config)
         self.encoder = Encoder(self.emb_x, config)
         self.decoder = Decoder(vocab_tgt, self.emb_y, self.attention, config)
+        self.language = LanguageModel(vocab_src, self.emb_x, config)
 
-    def forward(self, x, x_mask, prev, prev_mask, y):
-        mu, sigma = self.inference(x)
+    def forward(self, x, x_mask, prev, prev_mask, y, step):
         if self.config["model_type"] == "nmt":
-            z = mu
+            z, _ = self.inference(x)
+            enc_output, enc_hidden = self.encoder.forward(x, z)
+            logits_y_vectors = self.decoder.forward(enc_output, enc_hidden, x_mask, prev, z)
+            loss = self.compute_nmt_loss(logits_y_vectors, y)
+
         elif self.config["model_type"] == "aevnmt":
+            mu, sigma = self.inference(x)
             batch_size = x.shape[0]
-            e = self.normal.sample(sample_shape=torch.tensor([batch_size])).to(self.device)
-            z = mu_theta + e * sigma_theta
+            e = self.normal.sample(sample_shape=torch.tensor([batch_size])).to(self.config["device"])
+            z = mu + e * sigma
+
+            logits_x_vectors = self.language.forward(x, z)
+
+            enc_output, enc_hidden = self.encoder.forward(x, z)
+            logits_y_vectors = self.decoder.forward(enc_output, enc_hidden, x_mask, prev, z)
+            loss = self.compute_aevnmt_loss(logits_x_vectors, logits_y_vectors, x, y, mu, sigma, step)
         else:
             raise ValueError("Invalid model type")
 
-        enc_output, enc_hidden = self.encoder.forward(x, z)
-        logits_y_vectors = self.decoder.forward(enc_output, enc_hidden, x_mask, prev, z)
-
-        if self.config["model_type"] == "nmt":
-            loss = self.compute_nmt_loss(logits_y_vectors, y)
-
-        return logits_y_vectors, loss
+        return loss
 
     def predict(self, x, x_mask):
         with torch.no_grad():
@@ -62,10 +73,33 @@ class Baseline(nn.Module):
     def compute_nmt_loss(self, logits_y, y):
         loss = F.cross_entropy(
             logits_y.view(-1, len(self.vocab_tgt)),
-            y.long().view(-1),
+            y.long().contiguous().view(-1),
             ignore_index=self.vocab_tgt.stoi[self.config["pad"]],
             reduction="mean")
         return loss
+
+    def compute_aevnmt_loss(self, logits_x, logits_y, x, y, mu, sigma, step):
+        # Language model loss
+        loss_x = F.cross_entropy(
+            logits_x.view(-1, len(self.vocab_src)),
+            x.long().contiguous().view(-1),
+            ignore_index=self.vocab_src.stoi[self.config["pad"]],
+            reduction="mean")
+
+        # Encoder-Decoder loss
+        loss_y = F.cross_entropy(
+            logits_y.view(-1, len(self.vocab_tgt)),
+            y.long().contiguous().view(-1),
+            ignore_index=self.vocab_tgt.stoi[self.config["pad"]],
+            reduction="mean")
+
+        # KL loss
+        var = sigma ** 2
+        kl_loss = torch.mean(- 0.5 * torch.sum(torch.log(var) - mu ** 2 - var, 1))
+        if step < self.config["kl_annealing_steps"]:
+            kl_loss *= step/self.config["kl_annealing_steps"]
+
+        return loss_x + loss_y + kl_loss
 
 class InferenceModel(nn.Module):
     def __init__(self, emb_x, config):
@@ -155,16 +189,14 @@ class Decoder(nn.Module):
         return dec_output, dec_hidden.squeeze(0), logits
 
 
-    def forward(self, enc_output, enc_hidden, x_mask, y=None, z=None, max_len=None):
-        if max_len == None:
-            max_len = y.shape[-1]
+    def forward(self, enc_output, enc_hidden, x_mask, y=None, z=None):
+        max_len = y.shape[-1]
 
         # Init gru decoder with z
         if z is not None:
             dec_hidden = torch.tanh(self.aff_init_dec(z))
 
         self.attention.compute_proj_keys(enc_output)
-        hidden_states = []
         logits_vectors = []
         for j in range(max_len):
             dec_input = y[:, j].unsqueeze(1).long()
@@ -174,7 +206,6 @@ class Decoder(nn.Module):
             #     rw = Bernoulli(self.config["word_dropout"]).sample((dec_input.shape[0],))
             #     unk_idx = rw.nonzero().squeeze(1)
             #     dec_input[unk_idx, 0] = torch.tensor([self.unk_idx])
-
 
             e_j = self.emb_y(dec_input)
             dec_output, dec_hidden, logits = self.forward_step(e_j, enc_output, x_mask, dec_hidden)
@@ -292,6 +323,7 @@ class Decoder(nn.Module):
                             results["scores"][b].append(score)
                             results["predictions"][b].append(pred)
                 non_finished = end_condition.eq(0).nonzero().view(-1)
+
                  # if all sentences are translated, no need to go further
                 # pylint: disable=len-as-condition
                 if len(non_finished) == 0:
@@ -322,3 +354,40 @@ class Decoder(nn.Module):
                                         results["predictions"]],
                                        pad_value=self.pad_idx)
         return final_outputs
+
+
+class LanguageModel(nn.Module):
+    def __init__(self, vocab_src, emb_x, config):
+        super(LanguageModel, self).__init__()
+        self.vocab_src = vocab_src
+        self.emb_x = emb_x
+
+        self.aff_init_lm = nn.Linear(config["hidden_dim"], config["hidden_dim"])
+        self.dropout = nn.Dropout(config["dropout"])
+
+        self.rnn_gru_lm = nn.GRU(config["hidden_dim"], config["hidden_dim"], batch_first=True)
+
+        self.aff_out_x = nn.Linear(config["hidden_dim"], len(vocab_src))
+
+    def forward_step(self, f_j, lm_hidden):
+        rnn_input = f_j
+        lm_output, lm_hidden = self.rnn_gru_lm(rnn_input, lm_hidden.unsqueeze(0))
+        pre_out = lm_hidden.squeeze(0).unsqueeze(1)
+        pre_out = self.dropout(pre_out)
+        logits = self.aff_out_x(pre_out)
+        return lm_output, lm_hidden.squeeze(0), logits
+
+    def forward(self, x, z):
+        max_len = x.shape[-1]
+
+        if z is not None:
+            lm_hidden = torch.tanh(self.aff_init_lm(z))
+
+        logits_vectors = []
+        for j in range(max_len):
+            lm_input = x[:, j].unsqueeze(1).long()
+            f_j = self.emb_x(lm_input)
+            lm_output, lm_hidden, logits = self.forward_step(f_j, lm_hidden)
+            logits_vectors.append(logits)
+        logits_vectors = torch.cat(logits_vectors, dim=1)
+        return logits_vectors

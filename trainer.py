@@ -46,7 +46,9 @@ class Trainer():
             except StopIteration:
                 dataloader_iterator = iter(dataloader)
                 batch = next(dataloader_iterator)
-            batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=True)
+
+            cuda = False if self.config["device"] == "cpu" else True
+            batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=cuda)
 
             opt.zero_grad()
 
@@ -59,7 +61,7 @@ class Trainer():
 
 
             # if self.config["model_type"] == "nmt":
-            logits_y, loss = self.model.forward(x, x_mask, prev, prev_mask, y)
+            loss = self.model.forward(x, x_mask, prev, prev_mask, y, step + 1)
             # pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, prev, prev_mask)
             # loss = self.compute_loss(logits_y, y, len(self.vocab_tgt), step + 1)
             # loss, losses = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, len(self.vocab_tgt), step + 1)
@@ -110,7 +112,8 @@ class Trainer():
         file_name = '{}/{}/{}-{:06d}.raw.{}'.format(self.config["out_dir"], self.config["predictions_dir"], self.config["session"], step, self.config["tgt"])
         total_loss = 0
         for batch in tqdm(iter(dataloader)):
-            batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=True)
+            cuda = False if self.config["device"] == "cpu" else True
+            batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=cuda)
             x = batch.src
 
             x_mask = batch.src_mask
