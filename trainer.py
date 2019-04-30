@@ -57,9 +57,11 @@ class Trainer():
             x_mask = batch.src_mask
             prev_mask = batch.trg_mask
 
-            logits_y = self.model.forward(x, x_mask, prev, prev_mask)
+
+            # if self.config["model_type"] == "nmt":
+            logits_y, loss = self.model.forward(x, x_mask, prev, prev_mask, y)
             # pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, prev, prev_mask)
-            loss = self.compute_loss(logits_y, y, len(self.vocab_tgt), step + 1)
+            # loss = self.compute_loss(logits_y, y, len(self.vocab_tgt), step + 1)
             # loss, losses = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, len(self.vocab_tgt), step + 1)
 
             loss.backward()
@@ -68,7 +70,7 @@ class Trainer():
 
             batch_spd = (time.time() - start_time)
 
-            print("Step {:06d}/{:06d} , Total Loss: {:.2f}, Batch time: {:.1f}s".format(
+            print("Step {:06d}/{:06d} , Loss: {:.2f}, Batch time: {:.1f}s".format(
                 step + 1,
                 self.config["num_steps"],
                 loss.item(),

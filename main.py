@@ -26,6 +26,7 @@ def add_arguments(parser):
     parser.add_argument("--hidden_dim", type=int, default=256, help="Dimensionality of hidden units")
     parser.add_argument("--dropout", type=float, default=0.3, help="Dropout")
     parser.add_argument("--word_dropout", type=float, default=0.1, help="Word Dropout")
+    parser.add_argument("--attention", type=str, default="bahdanau", help="Attention type: bahdanau|luong")
     parser.add_argument("--max_len", type=int, default=50, help="Maximum sequence length")
 
     # Training
@@ -34,7 +35,7 @@ def add_arguments(parser):
     parser.add_argument("--num_steps", type=int, default=140000, help="Number of training steps")
     parser.add_argument("--steps_per_checkpoint", type=int, default=500, help="Number of steps per checkpoint")
     parser.add_argument("--kl_annealing_steps", type=int, default=80000, help="Number of steps for kl annealing")
-    parser.add_argument("--max_gradient_norm", type=float, default=1.0, help="Max norm of the gradients")
+    parser.add_argument("--max_gradient_norm", type=float, default=4.0, help="Max norm of the gradients")
 
     # Evaluation
     parser.add_argument("--batch_size_eval", type=int, default=64, help="Number of samples per batch during evaluation")
@@ -78,6 +79,7 @@ def setup_config():
         "max_len":FLAGS.max_len,
         "dropout":FLAGS.dropout,
         "word_dropout":FLAGS.word_dropout,
+        "attention":FLAGS.attention,
 
         # Training
         "learning_rate":FLAGS.learning_rate,

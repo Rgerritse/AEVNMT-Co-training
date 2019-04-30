@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.bernoulli import Bernoulli
-from joeynmt.attention import BahdanauAttention
+from joeynmt.attention import BahdanauAttention, LuongAttention
 from joeynmt.helpers import tile
 import numpy as np
 
@@ -21,21 +21,32 @@ class Baseline(nn.Module):
         nn.init.normal_(self.emb_x.weight, std=config["emb_init_std"])
         nn.init.normal_(self.emb_y.weight, std=config["emb_init_std"])
 
-        self.attention = BahdanauAttention(config["hidden_dim"], 2 * config["hidden_dim"], config["hidden_dim"])
+        if config["attention"] == "bahdanau":
+            self.attention = BahdanauAttention(config["hidden_dim"], 2 * config["hidden_dim"], config["hidden_dim"])
+        elif config["attention"] == "luong":
+            self.attention = LuongAttention(config["hidden_dim"], 2 * config["hidden_dim"])
         self.inference = InferenceModel(self.emb_x, config)
         self.encoder = Encoder(self.emb_x, config)
         self.decoder = Decoder(vocab_tgt, self.emb_y, self.attention, config)
 
-    def forward(self, x, x_mask, y, y_mask):
+    def forward(self, x, x_mask, prev, prev_mask, y):
         mu, sigma = self.inference(x)
         if self.config["model_type"] == "nmt":
             z = mu
+        elif self.config["model_type"] == "aevnmt":
+            batch_size = x.shape[0]
+            e = self.normal.sample(sample_shape=torch.tensor([batch_size])).to(self.device)
+            z = mu_theta + e * sigma_theta
         else:
             raise ValueError("Invalid model type")
 
         enc_output, enc_hidden = self.encoder.forward(x, z)
-        logits_vectors = self.decoder.forward(enc_output, enc_hidden, x_mask, y, z)
-        return logits_vectors
+        logits_y_vectors = self.decoder.forward(enc_output, enc_hidden, x_mask, prev, z)
+
+        if self.config["model_type"] == "nmt":
+            loss = self.compute_nmt_loss(logits_y_vectors, y)
+
+        return logits_y_vectors, loss
 
     def predict(self, x, x_mask):
         with torch.no_grad():
@@ -47,6 +58,14 @@ class Baseline(nn.Module):
             enc_output, enc_hidden = self.encoder.forward(x, z)
             predictions = self.decoder.predict(enc_output, enc_hidden, x_mask, z)
             return predictions
+
+    def compute_nmt_loss(self, logits_y, y):
+        loss = F.cross_entropy(
+            logits_y.view(-1, len(self.vocab_tgt)),
+            y.long().view(-1),
+            ignore_index=self.vocab_tgt.stoi[self.config["pad"]],
+            reduction="mean")
+        return loss
 
 class InferenceModel(nn.Module):
     def __init__(self, emb_x, config):
@@ -150,7 +169,7 @@ class Decoder(nn.Module):
         for j in range(max_len):
             dec_input = y[:, j].unsqueeze(1).long()
 
-            # Word dropout (excluded starting symbols)
+            # Word dropout (excluded starting symbols) bugged
             # if j > 0:
             #     rw = Bernoulli(self.config["word_dropout"]).sample((dec_input.shape[0],))
             #     unk_idx = rw.nonzero().squeeze(1)
@@ -163,7 +182,7 @@ class Decoder(nn.Module):
         logits_vectors = torch.cat(logits_vectors, dim=1)
         return logits_vectors
 
-    def predict(self, enc_output, enc_hidden, x_mask, z=None, n_best = 1):
+    def predict(self, enc_output, enc_hidden, x_mask, z=None, n_best=1):
         size = self.config["beam_size"]
         batch_size = x_mask.shape[0]
 
@@ -173,14 +192,6 @@ class Decoder(nn.Module):
         dec_hidden = tile(dec_hidden, size, dim=0)
         enc_output = tile(enc_output.contiguous(), size, dim=0)
         x_mask = tile(x_mask, size, dim=0)
-
-        self.attention.compute_proj_keys(enc_output)
-
-        # Tile attention inputs
-        # t_j = tile(t_j, size, dim=0)
-        # proj_key = tile(proj_key, size, dim=0)
-        # s = tile(s, size, dim=0)
-        # src_mask = tile(x_mask, size, dim=0)
 
         batch_offset = torch.arange(batch_size, dtype=torch.long, device=self.device)
         beam_offset = torch.arange(
@@ -210,6 +221,8 @@ class Decoder(nn.Module):
         results["gold_score"] = [0] * batch_size
 
         for step in range(self.config["max_len"]):
+            self.attention.compute_proj_keys(enc_output) # in loop, for shape
+
             dec_input = alive_seq[:, -1].view(-1, 1)
             e_j = self.emb_y(dec_input)
             dec_output, dec_hidden, logits = self.forward_step(e_j, enc_output, x_mask, dec_hidden)
@@ -292,11 +305,10 @@ class Decoder(nn.Module):
 
                 # reorder indices, outputs and masks
                 select_indices = batch_index.view(-1)
-                # encoder_output = encoder_output.index_select(0, select_indices)
-                t_j = t_j.index_select(0, select_indices)
-                proj_key = proj_key.index_select(0, select_indices)
-                s = s.index_select(0, select_indices)
-                src_mask = src_mask.index_select(0, select_indices)
+
+                dec_hidden = dec_hidden.index_select(0, select_indices)
+                enc_output = enc_output.index_select(0, select_indices)
+                x_mask = x_mask.index_select(0, select_indices)
 
         def pad_and_stack_hyps(hyps, pad_value):
             filled = np.ones((len(hyps), max([h.shape[0] for h in hyps])),
@@ -310,5 +322,3 @@ class Decoder(nn.Module):
                                         results["predictions"]],
                                        pad_value=self.pad_idx)
         return final_outputs
-
-        # print(self.training)
