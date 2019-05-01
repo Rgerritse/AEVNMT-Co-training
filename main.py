@@ -24,7 +24,7 @@ def add_arguments(parser):
     parser.add_argument("--emb_dim", type=int, default=256, help="Dimensionality of word embeddings")
     parser.add_argument("--hidden_dim", type=int, default=256, help="Dimensionality of hidden units")
     parser.add_argument("--dropout", type=float, default=0.3, help="Dropout")
-    parser.add_argument("--word_dropout", type=float, default=0.1, help="Word Dropout")
+    parser.add_argument("--word_dropout", type=float, default=0.3, help="Word Dropout")
     parser.add_argument("--attention", type=str, default="bahdanau", help="Attention type: bahdanau|luong")
     parser.add_argument("--max_len", type=int, default=50, help="Maximum sequence length")
 
