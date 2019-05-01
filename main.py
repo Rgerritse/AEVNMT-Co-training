@@ -1,3 +1,4 @@
+import json
 import argparse
 from trainer import Trainer
 from utils import get_vocabularies, load_dataset, load_dataset_joey, setup_model
@@ -52,9 +53,10 @@ def add_arguments(parser):
     parser.add_argument("--device", type=str, default="cuda", help="Device to train on: cuda|cpu")
     parser.add_argument("--num_seqs", type=int, default=None, help="Number of sequences in dataset")
     parser.add_argument("--num_improv_checks", type=int, default=20, help="Number of checks whether metric-score has improved")
+    parser.add_argument("--config", type=str, default=None, help="Path to config file")
 
 def setup_config():
-    return {
+    config = {
         # Data
         "src":FLAGS.src,
         "tgt":FLAGS.tgt,
@@ -106,8 +108,24 @@ def setup_config():
         "num_improv_checks":FLAGS.num_improv_checks
     }
 
+    # Loads config from json
+    if FLAGS.config != None:
+        with open(FLAGS.config, 'r') as f:
+            config_json = json.load(f)
+            for key, value in config_json.items():
+                config[key] = value
+
+    return config
+
+def print_config(config):
+    print("Configuration: ")
+    for i in sorted(config):
+        print("  {}: {}".format(i, config[i]))
+    print("\n")
+
 def main():
     config = setup_config()
+    print_config(config)
     train_data, dev_data, vocab_src, vocab_tgt = load_dataset_joey(config)
     model = setup_model(vocab_src, vocab_tgt, config)
     trainer = Trainer(model, vocab_src, vocab_tgt, train_data, dev_data, config)

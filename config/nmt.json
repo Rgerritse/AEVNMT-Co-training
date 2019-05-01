@@ -1,0 +1,5 @@
+{
+    "attention": "luong",
+    "dropout": 0.5,
+    "model_type": "nmt"
+}
