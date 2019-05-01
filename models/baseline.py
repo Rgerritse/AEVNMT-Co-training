@@ -207,10 +207,11 @@ class Decoder(nn.Module):
         logits_vectors = []
         for j in range(max_len):
             dec_input = y[:, j].unsqueeze(1).long()
-            # Word dropout (excluded starting symbols) bugged
+
+            # Word dropout (excluded starting symbols)
             if j > 0:
-                rw = Bernoulli(self.config["word_dropout"]).sample((dec_input.shape)).to(self.device)
-                dec_input = torch.where(rw < 1, dec_input, torch.empty(dec_input.shape, dtype=torch.int64).fill_(self.pad_idx).to(self.device))
+                drop_idx = Bernoulli(self.config["word_dropout"]).sample((dec_input.shape)).to(self.device)
+                dec_input = torch.where(drop_idx < 1, dec_input, torch.empty(dec_input.shape, dtype=torch.int64).fill_(self.unk_idx).to(self.device))
 
             e_j = self.emb_y(dec_input)
             dec_output, dec_hidden, logits = self.forward_step(e_j, enc_output, x_mask, dec_hidden)
