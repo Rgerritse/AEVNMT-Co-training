@@ -38,11 +38,9 @@ class Baseline(nn.Module):
 
     def forward(self, x, x_mask, prev, prev_mask, y, step):
         if self.config["model_type"] == "nmt":
-            z, _ = self.inference(x)
-            enc_output, enc_hidden = self.encoder.forward(x, z)
-            logits_y_vectors = self.decoder.forward(enc_output, enc_hidden, x_mask, prev, z)
+            enc_output, enc_hidden = self.encoder.forward(x)
+            logits_y_vectors = self.decoder.forward(enc_output, enc_hidden, x_mask, prev)
             loss = self.compute_nmt_loss(logits_y_vectors, y)
-
         elif self.config["model_type"] == "aevnmt":
             mu, sigma = self.inference(x)
             batch_size = x.shape[0]
@@ -61,13 +59,15 @@ class Baseline(nn.Module):
 
     def predict(self, x, x_mask):
         with torch.no_grad():
-            mu, sigma = self.inference(x)
             if self.config["model_type"] == "nmt":
-                z = mu
+                enc_output, enc_hidden = self.encoder.forward(x)
+                predictions = self.decoder.predict(enc_output, enc_hidden, x_mask)
+            elif self.config["model_type"] == "aevnmt":
+                mu, _ = self.inference(x)
+                enc_output, enc_hidden = self.encoder.forward(x, mu)
+                predictions = self.decoder.predict(enc_output, enc_hidden, x_mask, mu)
             else:
                 raise ValueError("Invalid model type")
-            enc_output, enc_hidden = self.encoder.forward(x, z)
-            predictions = self.decoder.predict(enc_output, enc_hidden, x_mask, z)
             return predictions
 
     def compute_nmt_loss(self, logits_y, y):
@@ -139,6 +139,8 @@ class Encoder(nn.Module):
 
         self.aff_init_enc = nn.Linear(config["hidden_dim"], config["hidden_dim"])
         self.rnn_bigru_x = nn.GRU(config["hidden_dim"], config["hidden_dim"], batch_first=True, bidirectional=True)
+        self.config = config
+        self.device =  torch.device(config["device"])
 
     def forward(self, x, z=None):
         batch_size = x.shape[0]
@@ -147,6 +149,8 @@ class Encoder(nn.Module):
 
         if z is not None:
             init_state = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
+        else:
+            init_state = torch.zeros(2, batch_size, self.config["hidden_dim"]).to(self.device)
 
         enc_output, enc_hidden = self.rnn_bigru_x(f, init_state)
 
@@ -190,11 +194,14 @@ class Decoder(nn.Module):
 
 
     def forward(self, enc_output, enc_hidden, x_mask, y=None, z=None):
+        batch_size = x_mask.shape[0]
         max_len = y.shape[-1]
 
         # Init gru decoder with z
         if z is not None:
             dec_hidden = torch.tanh(self.aff_init_dec(z))
+        else:
+            dec_hidden = torch.zeros(batch_size, self.config["hidden_dim"]).to(self.device)
 
         self.attention.compute_proj_keys(enc_output)
         logits_vectors = []
@@ -219,6 +226,8 @@ class Decoder(nn.Module):
 
         if z is not None:
             dec_hidden = torch.tanh(self.aff_init_dec(z))
+        else:
+            dec_hidden = torch.zeros(batch_size, self.config["hidden_dim"]).to(self.device)
 
         dec_hidden = tile(dec_hidden, size, dim=0)
         enc_output = tile(enc_output.contiguous(), size, dim=0)

@@ -108,16 +108,7 @@ def setup_config():
 
 def main():
     config = setup_config()
-    # vocab_src, vocab_tgt = get_vocabularies(config)
     train_data, dev_data, vocab_src, vocab_tgt = load_dataset_joey(config)
-    # print(train_data.examples)
-# : development dataset
-# test_data: testdata set if given, otherwise None
-# src_vocab: source vocabulary extracted from training data
-# trg_vocab: target vocabulary extracted from training data
-    # asd
-    # dataset_train = load_dataset(config["train_prefix"], config, vocab_src, vocab_tgt, True)
-    # dataset_dev = load_dataset(config["dev_prefix"], config, vocab_src, vocab_tgt, False)
     model = setup_model(vocab_src, vocab_tgt, config)
     trainer = Trainer(model, vocab_src, vocab_tgt, train_data, dev_data, config)
     trainer.train_model()

@@ -59,12 +59,7 @@ class Trainer():
             x_mask = batch.src_mask
             prev_mask = batch.trg_mask
 
-
-            # if self.config["model_type"] == "nmt":
             loss = self.model.forward(x, x_mask, prev, prev_mask, y, step + 1)
-            # pre_out_x, pre_out_y, mu_theta, sigma_theta = self.model.forward(x, x_mask, prev, prev_mask)
-            # loss = self.compute_loss(logits_y, y, len(self.vocab_tgt), step + 1)
-            # loss, losses = self.compute_loss(pre_out_x, x, pre_out_y, y, mu_theta, sigma_theta, len(self.vocab_tgt), step + 1)
 
             loss.backward()
             clip_grad_norm_(self.model.parameters(), self.config["max_gradient_norm"])
@@ -124,7 +119,7 @@ class Trainer():
                 for sent in decoded:
                     the_file.write(' '.join(sent) + '\n')
 
-        ref = "{}/{}.{}".format(self.config["data_dir"], self.config["dev_prefix"], self.config["tgt"])
+        ref = "{}/{}.detok.{}".format(self.config["data_dir"], self.config["dev_prefix"], self.config["tgt"])
         sacrebleu = subprocess.run(['./scripts/evaluate.sh',
             "{}/{}".format(self.config["out_dir"], self.config["predictions_dir"]),
             self.config["session"],
@@ -137,28 +132,3 @@ class Trainer():
         with open(scores_file, 'a') as f_score:
             f_score.write("Step {}: {}\n".format(step, bleu_score))
         return bleu_score
-
-    # def compute_loss(self, pre_out_x, x, pre_out_y, y, mu, sigma, vocab_size, step, reduction='mean'):
-    def compute_loss(self, logits_y, y, vocab_size, step, reduction='mean'):
-        # y_stack = torch.stack(pre_out_y, 1).view(-1, vocab_size)
-        # print("pad_index", self.vocab_tgt.stoi[self.config["pad"]])
-        y_loss = F.cross_entropy(logits_y.view(-1, vocab_size), y.long().view(-1), ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction=reduction)
-
-        # x_stack = torch.stack(pre_out_x, 1).view(-1, vocab_size)
-        # x_loss = F.cross_entropy(x_stack, x.long().view(-1), reduction=reduction)
-
-        # KL_loss = self.compute_diagonal_gaussian_kl(mu, sigma)
-        # if step < self.config["kl_annealing_steps"]:
-        #     KL_loss *= step/self.config["kl_annealing_steps"]
-
-
-        loss = y_loss
-        # losses = [y_loss]
-        # loss = y_loss + x_loss + KL_loss
-        # losses = [y_loss, x_loss, KL_loss]
-        return loss
-
-    def compute_diagonal_gaussian_kl(self, mu, sigma):
-        var = sigma ** 2
-        loss = torch.mean(- 0.5 * torch.sum(torch.log(var) - mu ** 2 - var, 1))
-        return loss
