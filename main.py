@@ -133,12 +133,6 @@ def main():
     print_config(config)
     train_data, dev_data, vocab_src, vocab_tgt = load_dataset_joey(config)
     model = setup_model(vocab_src, vocab_tgt, config)
-
-    # for name, p in model.named_parameters():
-    #     if "rnn" in name:
-    #         print(name)
-    # asd
-
     trainer = Trainer(model, vocab_src, vocab_tgt, train_data, dev_data, config)
     trainer.train_model()
 

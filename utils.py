@@ -1,9 +1,6 @@
-# from fairseq.data import Dictionary, LanguagePairDataset
 from joeynmt import vocabulary, data
-# from models import AEVNMT
 from models.baseline import Baseline
 import torch
-# from tqdm import tqdm
 
 def get_vocabularies(config):
     print("Constructing vocabularies...")
@@ -84,31 +81,6 @@ def load_dataset_joey(config):
     train_data, dev_data, _, src_vocab, tgt_vocab = data.load_data(data_cfg)
     return train_data, dev_data, src_vocab, tgt_vocab
 
-    # vocab_src = Dictionary(pad=config["pad"], eos=config["eos"], unk=config["unk"])
-    # vocab_src.add_symbol(config["sos"])
-    # src_path = "{}/{}.{}".format(config["data_dir"], config["vocab_prefix"], config["src"])
-    # with open(src_path, encoding="utf-8") as f_vocab_src:
-    #     for i, line in enumerate(f_vocab_src):
-    #         vocab_src.add_symbol(line.strip())
-    #
-    #
-    # vocab_tgt = Dictionary(pad=config["pad"], eos=config["eos"], unk=config["unk"])
-    # vocab_tgt.add_symbol(config["sos"])
-    # tgt_path = "{}/{}.{}".format(config["data_dir"], config["vocab_prefix"], config["tgt"])
-    # with open(tgt_path) as f_vocab_src:
-    #     for i, line in enumerate(f_vocab_src):
-    #         vocab_tgt.add_symbol(line.strip())
-    # return vocab_src, vocab_tgt
-
-
-# def get_vocab(vocab_path):
-#     vocab = Dictionary()
-#     with open(vocab_path, encoding='utf-8') as f_vocab:
-#         for i, line in enumerate(f_vocab):
-#             vocab.add_symbol(line.strip())
-#     return vocab
-#
-# def load_dataset(data_prefix, data_dir, src_lang, tgt_lang, vocab, num_sequences=None):
 def load_dataset(data_prefix, config, vocab_src, vocab_tgt, shuffle, num_sequences=None):
     print("Loading {} dataset".format(data_prefix))
 
@@ -151,7 +123,6 @@ def load_dataset(data_prefix, config, vocab_src, vocab_tgt, shuffle, num_sequenc
         )
     return dataset
 
-    # data_cfg["src"] = config["src"]
 def setup_model(vocab_src, vocab_tgt, config):
     device = torch.device(config["device"])
     if config["model_type"] == "cond_nmt" or config["model_type"] == "aevnmt":
@@ -161,9 +132,5 @@ def setup_model(vocab_src, vocab_tgt, config):
             config
         ).to(device)
     else:
-        model = AEVNMT(
-            vocab_src,
-            vocab_tgt,
-            config
-        ).to(device)
+        raise ValueError("Invalid model type {}".format(self.config["model_type"]))
     return model
