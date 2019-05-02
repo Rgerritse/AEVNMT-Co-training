@@ -1,7 +1,9 @@
 {
-    "attention": "luong",
+    "attention": "bahdanau",
+    "beam_size": 10,
+    "rnn_type": "gru",
     "dropout": 0.5,
     "emb_size": 256,
     "hidden_size": 256,
-    "model_type": "nmt"
+    "model_type": "cond_nmt"
 }
