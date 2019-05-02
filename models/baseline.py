@@ -41,7 +41,6 @@ class Baseline(nn.Module):
         if self.config["model_type"] == "cond_nmt":
             enc_output, enc_hidden = self.encoder.forward(x)
             logits_y_vectors = self.decoder.forward(enc_output, enc_hidden, x_mask, prev)
-            # logits_y_vectors = self.decoder.forward(enc_output, x_mask, prev)
             loss = self.compute_nmt_loss(logits_y_vectors, y)
         elif self.config["model_type"] == "aevnmt":
             mu, sigma = self.inference(x)
@@ -61,7 +60,7 @@ class Baseline(nn.Module):
 
     def predict(self, x, x_mask):
         with torch.no_grad():
-            if self.config["model_type"] == "nmt":
+            if self.config["model_type"] == "cond_nmt":
                 enc_output, enc_hidden = self.encoder.forward(x)
                 predictions = self.decoder.predict(enc_output, enc_hidden, x_mask)
             elif self.config["model_type"] == "aevnmt":
@@ -173,7 +172,6 @@ class Encoder(nn.Module):
             bwd_enc_hidden = h_n[1:h_n.size(0):2]
             enc_hidden = torch.cat([fwd_enc_hidden, bwd_enc_hidden], dim=2)
         return enc_output, enc_hidden
-        # return enc_output
 
 class Decoder(nn.Module):
     def __init__(self, vocab_tgt, emb_y, attention, config):
@@ -194,7 +192,7 @@ class Decoder(nn.Module):
         self.dropout = nn.Dropout(config["dropout"])
 
         self.bridge = nn.Linear(2 * config["hidden_dim"], config["hidden_dim"])
-        
+
         self.aff_init_dec = nn.Linear(config["hidden_dim"], config["hidden_dim"])
 
         if config["rnn_type"] == "gru":
@@ -264,15 +262,19 @@ class Decoder(nn.Module):
         logits_vectors = torch.cat(logits_vectors, dim=1)
         return logits_vectors
 
-    # def predict(self, enc_output, enc_hidden, x_mask, z=None, n_best=1):
-    def predict(self, enc_output, x_mask, z=None, n_best=1):
-        size = self.config["beam_size"]
+    def predict(self, enc_output, enc_hidden, x_mask, z=None, n_best=1):
+        size = self.config["beam_width"]
         batch_size = x_mask.shape[0]
 
         if z is not None:
             dec_hidden = torch.tanh(self.aff_init_dec(z))
+            dec_hidden = make_init_state(dec_hidden, self.config["rnn_type"])
         else:
-            dec_hidden = torch.zeros(batch_size, self.config["hidden_dim"]).to(self.device)
+            if self.config["pass_hidden_state"]:
+                dec_hidden = self.bridge(enc_hidden.squeeze(0))
+            else:
+                dec_hidden = torch.zeros(batch_size, self.config["hidden_dim"]).to(self.device)
+            dec_hidden = make_init_state(dec_hidden, self.config["rnn_type"])
 
         dec_hidden = tile(dec_hidden, size, dim=0)
         enc_output = tile(enc_output.contiguous(), size, dim=0)
@@ -392,7 +394,13 @@ class Decoder(nn.Module):
                 # reorder indices, outputs and masks
                 select_indices = batch_index.view(-1)
 
-                dec_hidden = dec_hidden.index_select(0, select_indices)
+                if self.config["rnn_type"] == "gru":
+                    dec_hidden = dec_hidden.index_select(0, select_indices)
+                elif self.config["rnn_type"] == "lstm":
+                    h_n = dec_hidden[0].index_select(0, select_indices)
+                    c_n = dec_hidden[1].index_select(0, select_indices)
+                    dec_hidden = (h_n, c_n)
+
                 enc_output = enc_output.index_select(0, select_indices)
                 x_mask = x_mask.index_select(0, select_indices)
 

@@ -1,6 +1,7 @@
 {
     "attention": "bahdanau",
-    "beam_size": 10,
+    "batch_size_train": 64,
+    "beam_width": 10,
     "rnn_type": "gru",
     "dropout": 0.5,
     "emb_size": 256,
