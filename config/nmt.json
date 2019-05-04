@@ -1,5 +1,6 @@
 {
     "attention": "luong",
+    "rnn_type": "lstm",
     "dropout": 0.5,
     "emb_size": 256,
     "hidden_size": 256,
