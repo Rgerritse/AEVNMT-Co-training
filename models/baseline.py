@@ -176,6 +176,7 @@ class Decoder(nn.Module):
         self.unk_idx = vocab_tgt.stoi[config["unk"]]
 
         self.dropout = nn.Dropout(config["dropout"])
+        self.bridge = nn.Linear(2 * config["hidden_dim"], config["hidden_dim"])
 
         self.aff_init_dec = nn.Linear(config["hidden_dim"], config["hidden_dim"])
         self.rnn_gru_dec = nn.GRU(config["emb_dim"] + 2 * config["hidden_dim"], config["hidden_dim"], batch_first=True)
@@ -201,7 +202,13 @@ class Decoder(nn.Module):
         if z is not None:
             dec_hidden = torch.tanh(self.aff_init_dec(z))
         else:
-            dec_hidden = torch.zeros(batch_size, self.config["hidden_dim"]).to(self.device)
+            if self.config["pass_hidden_state"]:
+                dec_hidden = self.bridge(enc_hidden.squeeze(0))
+                # print("enc_hidden: ", enc_hidden.squeeze(0).shape)
+                # asd
+            else:
+                dec_hidden = torch.zeros(batch_size, self.config["hidden_dim"]).to(self.device)
+                # asd
 
         self.attention.compute_proj_keys(enc_output)
         logits_vectors = []

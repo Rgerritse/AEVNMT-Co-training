@@ -4,6 +4,8 @@ from trainer import Trainer
 from utils import get_vocabularies, load_dataset, load_dataset_joey, setup_model
 
 def add_arguments(parser):
+    parser.register("type", "bool", lambda v: v.lower() == "true")
+
     # Data
     parser.add_argument("--src", type=str, default="en", help="Source suffix, e.g., en")
     parser.add_argument("--tgt", type=str, default="de", help="Target suffix, e.g., tr") # Should be changed for real dataset
@@ -28,6 +30,7 @@ def add_arguments(parser):
     parser.add_argument("--word_dropout", type=float, default=0.3, help="Word Dropout")
     parser.add_argument("--attention", type=str, default="bahdanau", help="Attention type: bahdanau|luong")
     parser.add_argument("--max_len", type=int, default=50, help="Maximum sequence length")
+    parser.add_argument("--pass_hidden_state", type="bool", nargs="?", const=True, default=True, help="Whether to pass encoder's hidden state to decoder when using an attention based model.")
 
     # Training
     parser.add_argument("--learning_rate", type=float, default=0.0003, help="Learning rate")
@@ -81,6 +84,7 @@ def setup_config():
         "dropout":FLAGS.dropout,
         "word_dropout":FLAGS.word_dropout,
         "attention":FLAGS.attention,
+        "pass_hidden_state":FLAGS.pass_hidden_state,
 
         # Training
         "learning_rate":FLAGS.learning_rate,
