@@ -44,7 +44,7 @@ def add_arguments(parser):
     # Evaluation
     parser.add_argument("--batch_size_eval", type=int, default=64, help="Number of samples per batch during evaluation")
     parser.add_argument("--steps_per_eval", type=int, default=500, help="Number of steps per eval")
-    parser.add_argument("--beam_size", type=int, default=10, help="Number of partial hypotheses")
+    parser.add_argument("--beam_width", type=int, default=10, help="Number of partial hypotheses")
     parser.add_argument("--length_penalty", type=int, default=1, help="Factor for length penalty")
 
     # Output
@@ -96,7 +96,7 @@ def setup_config():
         "max_gradient_norm":FLAGS.max_gradient_norm,
 
         # Evaluation
-        "beam_size":FLAGS.beam_size,
+        "beam_width":FLAGS.beam_width,
         "batch_size_eval":FLAGS.batch_size_eval,
         "steps_per_eval":FLAGS.steps_per_eval,
         "length_penalty":FLAGS.length_penalty,
