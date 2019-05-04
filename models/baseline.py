@@ -38,7 +38,7 @@ class Baseline(nn.Module):
         self.language = LanguageModel(vocab_src, self.emb_x, config)
 
     def forward(self, x, x_mask, prev, prev_mask, y, step):
-        if self.config["model_type"] == "nmt":
+        if self.config["model_type"] == "cond_nmt":
             enc_output, enc_hidden = self.encoder.forward(x)
             logits_y_vectors = self.decoder.forward(enc_output, enc_hidden, x_mask, prev)
             loss = self.compute_nmt_loss(logits_y_vectors, y)
@@ -54,13 +54,13 @@ class Baseline(nn.Module):
             logits_y_vectors = self.decoder.forward(enc_output, enc_hidden, x_mask, prev, z)
             loss = self.compute_aevnmt_loss(logits_x_vectors, logits_y_vectors, x, y, mu, sigma, step)
         else:
-            raise ValueError("Invalid model type")
+            raise ValueError("Invalid model type {}".format(self.config["model_type"]))
 
         return loss
 
     def predict(self, x, x_mask):
         with torch.no_grad():
-            if self.config["model_type"] == "nmt":
+            if self.config["model_type"] == "cond_nmt":
                 enc_output, enc_hidden = self.encoder.forward(x)
                 predictions = self.decoder.predict(enc_output, enc_hidden, x_mask)
             elif self.config["model_type"] == "aevnmt":
@@ -107,6 +107,7 @@ class InferenceModel(nn.Module):
         super(InferenceModel, self).__init__()
         self.emb_x = emb_x
 
+        # LSTM option
         self.rnn_gru_x = nn.GRU(config["emb_dim"], config["hidden_dim"], batch_first = True, bidirectional=True)
         # init this gru with xavier
 
@@ -139,8 +140,6 @@ class Encoder(nn.Module):
         self.emb_x = emb_x
 
         self.aff_init_enc = nn.Linear(config["hidden_dim"], config["hidden_dim"])
-        # self.rnn_bigru_x = nn.GRU(config["hidden_dim"], config["hidden_dim"], batch_first=True, bidirectional=True)
-
 
         if config["rnn_type"] == "gru":
             self.rnn_x = nn.GRU(config["hidden_dim"], config["hidden_dim"], batch_first=True, bidirectional=True)
@@ -157,12 +156,12 @@ class Encoder(nn.Module):
 
         if z is not None:
             init_state = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
+            init_state = make_init_state(init_state, self.config["rnn_type"])
         else:
             init_state = torch.zeros(2, batch_size, self.config["hidden_dim"]).to(self.device)
         init_state = make_init_state(init_state, self.config["rnn_type"])
 
         enc_output, enc_hidden = self.rnn_x(f, init_state)
-
 
         if self.config["rnn_type"] == "gru":
             fwd_enc_hidden = enc_hidden[0:enc_hidden.size(0):2]
@@ -173,10 +172,6 @@ class Encoder(nn.Module):
             fwd_enc_hidden = h_n[0:h_n.size(0):2]
             bwd_enc_hidden = h_n[1:h_n.size(0):2]
             enc_hidden = torch.cat([fwd_enc_hidden, bwd_enc_hidden], dim=2)
-
-        # fwd_enc_hidden = enc_hidden[0:enc_hidden.size(0):2]
-        # bwd_enc_hidden = enc_hidden[1:enc_hidden.size(0):2]
-        # enc_hidden = torch.cat([fwd_enc_hidden, bwd_enc_hidden], dim=2)
         return enc_output, enc_hidden
 
 class Decoder(nn.Module):
@@ -198,20 +193,18 @@ class Decoder(nn.Module):
         self.dropout = nn.Dropout(config["dropout"])
         self.bridge = nn.Linear(2 * config["hidden_dim"], config["hidden_dim"])
 
+        self.bridge = nn.Linear(2 * config["hidden_dim"], config["hidden_dim"])
+
         self.aff_init_dec = nn.Linear(config["hidden_dim"], config["hidden_dim"])
-        # self.rnn_gru_dec = nn.GRU(config["emb_dim"] + 2 * config["hidden_dim"], config["hidden_dim"], batch_first=True)
 
         if config["rnn_type"] == "gru":
             self.rnn_dec = nn.GRU(config["emb_dim"] + 2 * config["hidden_dim"], config["hidden_dim"], batch_first=True)
         elif config["rnn_type"] == "lstm":
             self.rnn_dec = nn.LSTM(config["emb_dim"] + 2 * config["hidden_dim"], config["hidden_dim"], batch_first=True)
 
-
-
         self.aff_out_y = nn.Linear(config["hidden_dim"] + config["emb_dim"], len(vocab_tgt))
 
     def forward_step(self, e_j, enc_output, x_mask, dec_hidden):
-        # query = dec_hidden.unsqueeze(1)
         if self.config["rnn_type"] == "gru":
             query = dec_hidden.unsqueeze(1)
             dec_hidden = dec_hidden.unsqueeze(0)
@@ -236,13 +229,10 @@ class Decoder(nn.Module):
             c_n = dec_hidden[1].squeeze(0)
             dec_hidden = (h_n, c_n)
 
-        # pre_out = torch.cat((dec_hidden.squeeze(0).unsqueeze(1), e_j), 2)
         pre_out = self.dropout(pre_out)
         logits = self.aff_out_y(pre_out)
 
         return dec_output, dec_hidden, logits
-        # return dec_output, dec_hidden.squeeze(0), logits
-
 
     def forward(self, enc_output, enc_hidden, x_mask, y=None, z=None):
         batch_size = x_mask.shape[0]
@@ -284,7 +274,7 @@ class Decoder(nn.Module):
         return logits_vectors
 
     def predict(self, enc_output, enc_hidden, x_mask, z=None, n_best=1):
-        size = self.config["beam_size"]
+        size = self.config["beam_width"]
         batch_size = x_mask.shape[0]
 
         # if z is not None:
@@ -294,6 +284,7 @@ class Decoder(nn.Module):
 
         if z is not None:
             dec_hidden = torch.tanh(self.aff_init_dec(z))
+            dec_hidden = make_init_state(dec_hidden, self.config["rnn_type"])
         else:
             if self.config["pass_hidden_state"]:
                 dec_hidden = self.bridge(enc_hidden.squeeze(0))
@@ -418,8 +409,6 @@ class Decoder(nn.Module):
 
                 # reorder indices, outputs and masks
                 select_indices = batch_index.view(-1)
-
-                # dec_hidden = dec_hidden.index_select(0, select_indices)
 
                 if self.config["rnn_type"] == "gru":
                     dec_hidden = dec_hidden.index_select(0, select_indices)
