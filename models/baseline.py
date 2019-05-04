@@ -145,6 +145,7 @@ class Encoder(nn.Module):
             self.rnn_x = nn.GRU(config["hidden_dim"], config["hidden_dim"], batch_first=True, bidirectional=True)
         elif config["rnn_type"] == "lstm":
             self.rnn_x = nn.LSTM(config["hidden_dim"], config["hidden_dim"], batch_first=True, bidirectional=True)
+
         self.config = config
         self.device =  torch.device(config["device"])
 
@@ -158,7 +159,7 @@ class Encoder(nn.Module):
             init_state = make_init_state(init_state, self.config["rnn_type"])
         else:
             init_state = torch.zeros(2, batch_size, self.config["hidden_dim"]).to(self.device)
-            init_state = make_init_state(init_state, self.config["rnn_type"])
+        init_state = make_init_state(init_state, self.config["rnn_type"])
 
         enc_output, enc_hidden = self.rnn_x(f, init_state)
 
@@ -190,6 +191,7 @@ class Decoder(nn.Module):
         self.unk_idx = vocab_tgt.stoi[config["unk"]]
 
         self.dropout = nn.Dropout(config["dropout"])
+        self.bridge = nn.Linear(2 * config["hidden_dim"], config["hidden_dim"])
 
         self.bridge = nn.Linear(2 * config["hidden_dim"], config["hidden_dim"])
 
@@ -212,8 +214,9 @@ class Decoder(nn.Module):
             c_n = dec_hidden[1].unsqueeze(0)
             dec_hidden = (h_n, c_n)
 
-        context, _ = self.attention.forward(query, x_mask, enc_output)
-        rnn_input = torch.cat((context, e_j), 2)
+        c_j, _ = self.attention.forward(query, x_mask, enc_output)
+        rnn_input = torch.cat((c_j, e_j), 2)
+        # dec_output, dec_hidden = self.rnn_gru_dec(rnn_input, dec_hidden.unsqueeze(0))
 
         dec_output, dec_hidden = self.rnn_dec(rnn_input, dec_hidden)
 
@@ -225,26 +228,34 @@ class Decoder(nn.Module):
             h_n = dec_hidden[0].squeeze(0)
             c_n = dec_hidden[1].squeeze(0)
             dec_hidden = (h_n, c_n)
+
         pre_out = self.dropout(pre_out)
         logits = self.aff_out_y(pre_out)
 
         return dec_output, dec_hidden, logits
-
 
     def forward(self, enc_output, enc_hidden, x_mask, y=None, z=None):
         batch_size = x_mask.shape[0]
         max_len = y.shape[-1]
 
         # Init gru decoder with z
+        # if z is not None:
+        #     dec_hidden = torch.tanh(self.aff_init_dec(z))
+        # else:
+        #     if self.config["pass_hidden_state"]:
+        #         dec_hidden = self.bridge(enc_hidden.squeeze(0))
+        #     else:
+        #         dec_hidden = torch.zeros(batch_size, self.config["hidden_dim"]).to(self.device)
+
+
         if z is not None:
             dec_hidden = torch.tanh(self.aff_init_dec(z))
-            dec_hidden = make_init_state(dec_hidden, self.config["rnn_type"])
         else:
             if self.config["pass_hidden_state"]:
                 dec_hidden = self.bridge(enc_hidden.squeeze(0))
             else:
                 dec_hidden = torch.zeros(batch_size, self.config["hidden_dim"]).to(self.device)
-            dec_hidden = make_init_state(dec_hidden, self.config["rnn_type"])
+        dec_hidden = make_init_state(dec_hidden, self.config["rnn_type"])
 
         self.attention.compute_proj_keys(enc_output)
         logits_vectors = []
@@ -266,6 +277,11 @@ class Decoder(nn.Module):
         size = self.config["beam_width"]
         batch_size = x_mask.shape[0]
 
+        # if z is not None:
+        #     dec_hidden = torch.tanh(self.aff_init_dec(z))
+        # else:
+        #     dec_hidden = torch.zeros(batch_size, self.config["hidden_dim"]).to(self.device)
+
         if z is not None:
             dec_hidden = torch.tanh(self.aff_init_dec(z))
             dec_hidden = make_init_state(dec_hidden, self.config["rnn_type"])
@@ -274,7 +290,7 @@ class Decoder(nn.Module):
                 dec_hidden = self.bridge(enc_hidden.squeeze(0))
             else:
                 dec_hidden = torch.zeros(batch_size, self.config["hidden_dim"]).to(self.device)
-            dec_hidden = make_init_state(dec_hidden, self.config["rnn_type"])
+        dec_hidden = make_init_state(dec_hidden, self.config["rnn_type"])
 
         dec_hidden = tile(dec_hidden, size, dim=0)
         enc_output = tile(enc_output.contiguous(), size, dim=0)
