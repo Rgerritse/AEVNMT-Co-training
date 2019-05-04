@@ -132,5 +132,5 @@ def setup_model(vocab_src, vocab_tgt, config):
             config
         ).to(device)
     else:
-        raise ValueError("Invalid model type {}".format(self.config["model_type"]))
+        raise ValueError("Invalid model type {}".format(config["model_type"]))
     return model
