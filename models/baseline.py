@@ -37,11 +37,12 @@ class Baseline(nn.Module):
         self.decoder = Decoder(vocab_tgt, self.emb_y, self.attention, config)
         self.language = LanguageModel(vocab_src, self.emb_x, config)
 
-    def forward(self, x, x_mask, prev, prev_mask, y, step):
+    def forward(self, x, x_mask, prev, prev_mask, y, step, reduction="mean"):
         if self.config["model_type"] == "cond_nmt":
+            # z, _ = self.inference(x)
             enc_output, enc_hidden = self.encoder.forward(x)
             logits_y_vectors = self.decoder.forward(enc_output, enc_hidden, x_mask, prev)
-            loss = self.compute_nmt_loss(logits_y_vectors, y)
+            loss = self.compute_nmt_loss(logits_y_vectors, y, reduction)
         elif self.config["model_type"] == "aevnmt":
             mu, sigma = self.inference(x)
             batch_size = x.shape[0]
@@ -71,12 +72,12 @@ class Baseline(nn.Module):
                 raise ValueError("Invalid model type")
             return predictions
 
-    def compute_nmt_loss(self, logits_y, y):
+    def compute_nmt_loss(self, logits_y, y, reduction="mean"):
         loss = F.cross_entropy(
             logits_y.view(-1, len(self.vocab_tgt)),
             y.long().contiguous().view(-1),
             ignore_index=self.vocab_tgt.stoi[self.config["pad"]],
-            reduction="mean")
+            reduction=reduction)
         return loss
 
     def compute_aevnmt_loss(self, logits_x, logits_y, x, y, mu, sigma, step):
@@ -108,25 +109,32 @@ class InferenceModel(nn.Module):
         self.emb_x = emb_x
 
         # LSTM option
-        self.rnn_gru_x = nn.GRU(config["emb_dim"], config["hidden_dim"], batch_first = True, bidirectional=True)
+        # self.rnn_gru_x = nn.GRU(config["emb_dim"], config["hidden_dim"], batch_first = True, bidirectional=True)
+
+
+        if config["rnn_type"] == "gru":
+            self.rnn_x = nn.GRU(config["emb_dim"], config["hidden_dim"], batch_first=True, bidirectional=True)
+        elif config["rnn_type"] == "lstm":
+            self.rnn_x = nn.LSTM(config["emb_dim"], config["hidden_dim"], batch_first=True, bidirectional=True)
+
         # init this gru with xavier
 
         self.dropout = nn.Dropout(config["dropout"])
 
         self.aff_u_hid = nn.Linear(2 * config["hidden_dim"], config["hidden_dim"])
-        self.aff_u_out = nn.Linear(config["hidden_dim"], config["hidden_dim"])
+        self.aff_u_out = nn.Linear(config["hidden_dim"], config["latent_size"])
 
         self.aff_s_hid = nn.Linear(2 * config["hidden_dim"], config["hidden_dim"])
-        self.aff_s_out = nn.Linear(config["hidden_dim"], config["hidden_dim"])
+        self.aff_s_out = nn.Linear(config["hidden_dim"], config["latent_size"])
 
     def forward(self, x):
         f = self.emb_x(x.long())
         f.detach()
 
-        gru_x, _ = self.rnn_gru_x(f)
-        gru_x = self.dropout(gru_x)
+        out, _ = self.rnn_x(f)
+        out = self.dropout(out)
 
-        h_x = torch.mean(gru_x, 1)
+        h_x = torch.mean(out, 1)
 
         mu = self.aff_u_out(F.relu(self.aff_u_hid(h_x)))
         sigma = F.softplus(self.aff_s_out(F.relu(self.aff_s_hid(h_x))))
@@ -139,7 +147,7 @@ class Encoder(nn.Module):
 
         self.emb_x = emb_x
 
-        self.aff_init_enc = nn.Linear(config["hidden_dim"], config["hidden_dim"])
+        self.aff_init_enc = nn.Linear(config["latent_size"], config["hidden_dim"])
 
         if config["rnn_type"] == "gru":
             self.rnn_x = nn.GRU(config["hidden_dim"], config["hidden_dim"], batch_first=True, bidirectional=True)
@@ -156,7 +164,7 @@ class Encoder(nn.Module):
 
         if z is not None:
             init_state = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
-            init_state = make_init_state(init_state, self.config["rnn_type"])
+            # init_state = make_init_state(init_state, self.config["rnn_type"])
         else:
             init_state = torch.zeros(2, batch_size, self.config["hidden_dim"]).to(self.device)
         init_state = make_init_state(init_state, self.config["rnn_type"])
@@ -185,17 +193,18 @@ class Decoder(nn.Module):
         self.sos_idx = vocab_tgt.stoi[config["sos"]]
         self.eos_idx = vocab_tgt.stoi[config["eos"]]
         self.pad_idx = vocab_tgt.stoi[config["pad"]]
+        self.unk_idx = vocab_tgt.stoi[config["unk"]]
 
         self.emb_y = emb_y
         self.attention = attention
-        self.unk_idx = vocab_tgt.stoi[config["unk"]]
+
 
         self.dropout = nn.Dropout(config["dropout"])
         self.bridge = nn.Linear(2 * config["hidden_dim"], config["hidden_dim"])
 
         self.bridge = nn.Linear(2 * config["hidden_dim"], config["hidden_dim"])
 
-        self.aff_init_dec = nn.Linear(config["hidden_dim"], config["hidden_dim"])
+        self.aff_init_dec = nn.Linear(config["latent_size"], config["hidden_dim"])
 
         if config["rnn_type"] == "gru":
             self.rnn_dec = nn.GRU(config["emb_dim"] + 2 * config["hidden_dim"], config["hidden_dim"], batch_first=True)
@@ -262,10 +271,19 @@ class Decoder(nn.Module):
         for j in range(max_len):
             dec_input = y[:, j].unsqueeze(1).long()
 
-            # Word dropout (excluded starting symbols)
             if j > 0:
-                drop_idx = Bernoulli(self.config["word_dropout"]).sample((dec_input.shape)).to(self.device)
-                dec_input = torch.where(drop_idx < 1, dec_input, torch.empty(dec_input.shape, dtype=torch.int64).fill_(self.unk_idx).to(self.device))
+                probs = torch.zeros(dec_input.shape).uniform_(0, 1).to(self.device)
+                dec_input = torch.where(
+                    (probs > self.config["word_dropout"]) | (dec_input == self.pad_idx),
+                    dec_input,
+                    torch.empty(dec_input.shape, dtype=torch.int64).fill_(self.unk_idx).to(self.device)
+                )
+
+
+            # Word dropout (excluded starting symbols)
+            # if j > 0:
+            #     drop_idx = Bernoulli(self.config["word_dropout"]).sample((dec_input.shape)).to(self.device)
+            #     dec_input = torch.where(drop_idx < 1, dec_input, torch.empty(dec_input.shape, dtype=torch.int64).fill_(self.unk_idx).to(self.device))
 
             e_j = self.emb_y(dec_input)
             dec_output, dec_hidden, logits = self.forward_step(e_j, enc_output, x_mask, dec_hidden)
