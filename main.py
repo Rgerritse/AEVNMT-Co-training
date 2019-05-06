@@ -40,6 +40,8 @@ def add_arguments(parser):
     parser.add_argument("--steps_per_checkpoint", type=int, default=500, help="Number of steps per checkpoint")
     parser.add_argument("--kl_annealing_steps", type=int, default=80000, help="Number of steps for kl annealing")
     parser.add_argument("--max_gradient_norm", type=float, default=4.0, help="Max norm of the gradients")
+    parser.add_argument("--latent_size", type=int, default=32, help="Size of the latent variable")
+
 
     # Evaluation
     parser.add_argument("--batch_size_eval", type=int, default=64, help="Number of samples per batch during evaluation")
@@ -86,6 +88,7 @@ def setup_config():
         "word_dropout":FLAGS.word_dropout,
         "attention":FLAGS.attention,
         "pass_hidden_state":FLAGS.pass_hidden_state,
+        "latent_size":FLAGS.latent_size,
 
         # Training
         "learning_rate":FLAGS.learning_rate,
@@ -134,7 +137,7 @@ def main():
     train_data, dev_data, vocab_src, vocab_tgt = load_dataset_joey(config)
     model = setup_model(vocab_src, vocab_tgt, config)
     trainer = Trainer(model, vocab_src, vocab_tgt, train_data, dev_data, config)
-    trainer.train_model()
+    trainer.train_model2()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
