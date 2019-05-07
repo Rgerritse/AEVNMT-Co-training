@@ -20,11 +20,9 @@ class Baseline(nn.Module):
         # Embeddings with gaussian initialization
         self.emb_x = nn.Embedding(len(vocab_src), config["emb_dim"], padding_idx=vocab_src.stoi[config["pad"]])
         self.emb_y = nn.Embedding(len(vocab_tgt), config["emb_dim"], padding_idx=vocab_tgt.stoi[config["pad"]])
-        nn.init.normal_(self.emb_x.weight, std=config["emb_init_std"])
-        nn.init.normal_(self.emb_y.weight, std=config["emb_init_std"])
 
-        self.mu_prior = torch.tensor([0.0] * config["hidden_dim"])
-        self.sigma_prior = torch.tensor([1.0] * config["hidden_dim"])
+        self.mu_prior = torch.tensor([0.0] * config["latent_size"])
+        self.sigma_prior = torch.tensor([1.0] * config["latent_size"])
         self.normal = Normal(self.mu_prior, self.sigma_prior)
 
         if config["attention"] == "bahdanau":
@@ -36,6 +34,21 @@ class Baseline(nn.Module):
         self.encoder = Encoder(self.emb_x, config)
         self.decoder = Decoder(vocab_tgt, self.emb_y, self.attention, config)
         self.language = LanguageModel(vocab_src, self.emb_x, config)
+
+    def init_params(self, config):
+        print("Initilizing model parameters...")
+        with torch.no_grad():
+            for name, p in self.named_parameters():
+                if "emb" in name:
+                    nn.init.normal_(p, std=config["emb_init_std"])
+                elif "bias" in name:
+                    nn.init.zeros_(p)
+                else:
+                    nn.init.xavier_uniform_(p)
+
+            # zero out paddings
+            self.emb_x.weight.data[self.vocab_src.stoi[config["pad"]]].zero_()
+            self.emb_y.weight.data[self.vocab_tgt.stoi[config["pad"]]].zero_()
 
     def forward(self, x, x_mask, prev, prev_mask, y, step, reduction="mean"):
         if self.config["model_type"] == "cond_nmt":
@@ -65,9 +78,9 @@ class Baseline(nn.Module):
                 enc_output, enc_hidden = self.encoder.forward(x)
                 predictions = self.decoder.predict(enc_output, enc_hidden, x_mask)
             elif self.config["model_type"] == "aevnmt":
-                mu, _ = self.inference(x)
-                enc_output, enc_hidden = self.encoder.forward(x, mu)
-                predictions = self.decoder.predict(enc_output, enc_hidden, x_mask, mu)
+                z, _ = self.inference(x)
+                enc_output, enc_hidden = self.encoder.forward(x, z)
+                predictions = self.decoder.predict(enc_output, enc_hidden, x_mask, z)
             else:
                 raise ValueError("Invalid model type")
             return predictions
@@ -100,6 +113,7 @@ class Baseline(nn.Module):
         kl_loss = torch.mean(- 0.5 * torch.sum(torch.log(var) - mu ** 2 - var, 1))
         if step < self.config["kl_annealing_steps"]:
             kl_loss *= step/self.config["kl_annealing_steps"]
+        kl_loss = max(self.config["kl_free_nats"], kl_loss)
 
         return loss_x + loss_y + kl_loss
 
@@ -107,10 +121,6 @@ class InferenceModel(nn.Module):
     def __init__(self, emb_x, config):
         super(InferenceModel, self).__init__()
         self.emb_x = emb_x
-
-        # LSTM option
-        # self.rnn_gru_x = nn.GRU(config["emb_dim"], config["hidden_dim"], batch_first = True, bidirectional=True)
-
 
         if config["rnn_type"] == "gru":
             self.rnn_x = nn.GRU(config["emb_dim"], config["hidden_dim"], batch_first=True, bidirectional=True)
@@ -164,7 +174,6 @@ class Encoder(nn.Module):
 
         if z is not None:
             init_state = torch.unsqueeze(torch.tanh(self.aff_init_enc(z)), 0).expand(2, -1, -1).contiguous()
-            # init_state = make_init_state(init_state, self.config["rnn_type"])
         else:
             init_state = torch.zeros(2, batch_size, self.config["hidden_dim"]).to(self.device)
         init_state = make_init_state(init_state, self.config["rnn_type"])
@@ -247,16 +256,6 @@ class Decoder(nn.Module):
         batch_size = x_mask.shape[0]
         max_len = y.shape[-1]
 
-        # Init gru decoder with z
-        # if z is not None:
-        #     dec_hidden = torch.tanh(self.aff_init_dec(z))
-        # else:
-        #     if self.config["pass_hidden_state"]:
-        #         dec_hidden = self.bridge(enc_hidden.squeeze(0))
-        #     else:
-        #         dec_hidden = torch.zeros(batch_size, self.config["hidden_dim"]).to(self.device)
-
-
         if z is not None:
             dec_hidden = torch.tanh(self.aff_init_dec(z))
         else:
@@ -302,7 +301,6 @@ class Decoder(nn.Module):
 
         if z is not None:
             dec_hidden = torch.tanh(self.aff_init_dec(z))
-            dec_hidden = make_init_state(dec_hidden, self.config["rnn_type"])
         else:
             if self.config["pass_hidden_state"]:
                 dec_hidden = self.bridge(enc_hidden.squeeze(0))
@@ -310,7 +308,13 @@ class Decoder(nn.Module):
                 dec_hidden = torch.zeros(batch_size, self.config["hidden_dim"]).to(self.device)
         dec_hidden = make_init_state(dec_hidden, self.config["rnn_type"])
 
-        dec_hidden = tile(dec_hidden, size, dim=0)
+        if self.config["rnn_type"] == "gru":
+            dec_hidden = tile(dec_hidden, size, dim=0)
+        elif self.config["rnn_type"] == "lstm":
+            h_n = tile(dec_hidden[0], size, dim=0)
+            c_n = tile(dec_hidden[1], size, dim=0)
+            dec_hidden = (h_n, c_n)
+
         enc_output = tile(enc_output.contiguous(), size, dim=0)
         x_mask = tile(x_mask, size, dim=0)
 
@@ -458,7 +462,7 @@ class LanguageModel(nn.Module):
         self.vocab_src = vocab_src
         self.emb_x = emb_x
 
-        self.aff_init_lm = nn.Linear(config["hidden_dim"], config["hidden_dim"])
+        self.aff_init_lm = nn.Linear(config["latent_size"], config["hidden_dim"])
         self.dropout = nn.Dropout(config["dropout"])
 
         self.rnn_gru_lm = nn.GRU(config["hidden_dim"], config["hidden_dim"], batch_first=True)
