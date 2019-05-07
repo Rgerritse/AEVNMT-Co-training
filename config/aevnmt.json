@@ -1,0 +1,17 @@
+{
+    "attention": "bahdanau",
+    "batch_size_train": 40,
+    "rnn_type": "lstm",
+    "dropout": 0.5,
+    "emb_size": 256,
+    "hidden_size": 256,
+    "kl_free_nats": 5,
+    "latent_size": 32,
+    "learning_rate": 0.002,
+    "lr_reduce_cooldown": 2,
+    "lr_reduce_factor": 0.5,
+    "lr_reduce_patience": 2,
+    "min_lr": 1e-05,
+    "model_type": "aevnmt",
+    "num_epochs": 30
+}
