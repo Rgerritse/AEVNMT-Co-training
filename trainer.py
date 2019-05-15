@@ -8,8 +8,10 @@ from tqdm import tqdm
 import numpy as np
 
 class Trainer():
-    def __init__(self, model, vocab_src, vocab_tgt, dataset_train, dataset_dev, config):
+    def __init__(self, model, train_fn, validate_fn, vocab_src, vocab_tgt, dataset_train, dataset_dev, config):
         self.model = model
+        self.train_fn = train_fn
+        self.validate_fn = validate_fn
         self.vocab_src = vocab_src
         self.vocab_tgt = vocab_tgt
         self.dataset_train = dataset_train
@@ -59,7 +61,8 @@ class Trainer():
             x_mask = batch.src_mask
             prev_mask = batch.trg_mask
 
-            loss = self.model.forward(x, x_mask, prev, prev_mask, y, step + 1)
+
+            loss = self.model.forward(x, x_mask, prev)
 
             loss.backward()
             clip_grad_norm_(self.model.parameters(), self.config["max_gradient_norm"])
@@ -113,18 +116,18 @@ class Trainer():
         )
 
         saved_epoch = 0
+        patience_counter = 0
+        max_bleu = 0.0
         if os.path.exists(checkpoints_path):
             checkpoints = [cp for cp in sorted(os.listdir(checkpoints_path)) if '-'.join(cp.split('-')[:-1]) == self.config["session"]]
             if checkpoints:
                 state = torch.load('{}/{}'.format(checkpoints_path, checkpoints[-1]))
                 saved_epoch = state['epoch']
+                patience_counter = state['patience_counter']
+                max_bleu = state['max_bleu']
                 self.model.load_state_dict(state['state_dict'])
                 opt.load_state_dict(state['optimizer'])
                 scheduler.load_state_dict(state['scheduler'])
-
-        max_bleu = 0.0
-        unimproved_bleu_checks = 0
-        # dataloader_iterator = iter(dataloader)
 
         cuda = False if self.config["device"] == "cpu" else True
         for epoch in range(saved_epoch, self.config["num_epochs"]):
@@ -142,10 +145,12 @@ class Trainer():
                 x_mask = batch.src_mask
                 prev_mask = batch.trg_mask
 
-                loss = self.model.forward(x, x_mask, prev, prev_mask, y, step + 1)
-
+                loss = self.train_fn(self.model, x, x_mask, prev, y)
                 loss.backward()
-                clip_grad_norm_(self.model.parameters(), self.config["max_gradient_norm"])
+
+                if self.config["max_gradient_norm"] > 0:
+                    clip_grad_norm_(self.model.parameters(), self.config["max_gradient_norm"])
+
                 opt.step()
 
                 print("Epoch: {:03d}/{:03d}, Batch {:05d}/{:05d}, Loss: {:.2f}".format(
@@ -156,66 +161,101 @@ class Trainer():
                     loss.item())
                 )
 
+            val_bleu = self.evaluate(epoch)
+            scheduler.step(float(val_bleu))
+
+            print("Blue score: {}".format(val_bleu))
+            if float(val_bleu) > max_bleu:
+                max_bleu = float(val_bleu)
+                patience_counter = 0
+            else:
+                patience_counter += 1
+                if patience_counter >= self.config["patience"]:
+                    break
+
             # Save checkpoint
             if not os.path.exists(checkpoints_path):
                 os.makedirs(checkpoints_path)
             state = {
                 'epoch': epoch + 1,
+                'patience_counter': patience_counter,
+                'max_bleu': max_bleu,
                 'state_dict': self.model.state_dict(),
                 'optimizer': opt.state_dict(),
-                'scheduler': scheduler.state_dict(),
+                'scheduler': scheduler.state_dict()
             }
             torch.save(state, '{}/{}-{:03d}'.format(checkpoints_path, self.config["session"], epoch + 1))
 
-            with torch.no_grad():
-                bleu_score, dev_loss = self.eval(step + 1, epoch + 1)
-                print("Blue score: {}, Dev loss: {}".format(bleu_score, dev_loss.item()))
-
-            scheduler.step(dev_loss.item())
-
-    def eval(self, step, epoch):
-        self.model.eval()
-        print("Evaluating...")
+    def evaluate(self, epoch):
         checkpoints_path = "{}/{}".format(self.config["out_dir"], self.config["predictions_dir"])
         if not os.path.exists(checkpoints_path):
             os.makedirs(checkpoints_path)
 
-        dataloader = data.make_data_iter(self.dataset_dev, self.config["batch_size_eval"], train=False)
-        file_name = '{}/{}/{}-{:03d}.raw.{}'.format(self.config["out_dir"], self.config["predictions_dir"], self.config["session"], epoch, self.config["tgt"])
-        total_loss = 0
-        for batch in tqdm(dataloader):
-            cuda = False if self.config["device"] == "cpu" else True
-            batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=cuda)
+        self.model.eval()
+        val_bleu = self.validate_fn(
+            self.model,
+            self.dataset_dev,
+            self.vocab_src,
+            self.vocab_tgt,
+            epoch,
+            self.config
+        )
+        return val_bleu
 
-            x = batch.src
-            prev = batch.trg_input
-            y = batch.trg
 
-            x_mask = batch.src_mask
-            prev_mask = batch.trg_mask
 
-            loss = self.model.forward(x, x_mask, prev, prev_mask, y, step + 1)
-            pred = self.model.predict(x, x_mask)
-            decoded = self.vocab_tgt.arrays_to_sentences(pred)
-
-            total_loss += loss
-
-            with open(file_name, 'a') as the_file:
-                for sent in decoded:
-                    the_file.write(' '.join(sent) + '\n')
-
-        total_loss /= len(dataloader)
-
-        ref = "{}/{}.detok.{}".format(self.config["data_dir"], self.config["dev_prefix"], self.config["tgt"])
-        sacrebleu = subprocess.run(['./scripts/evaluate.sh',
-            "{}/{}".format(self.config["out_dir"], self.config["predictions_dir"]),
-            self.config["session"],
-            '{:03d}'.format(epoch),
-            ref,
-            self.config["tgt"]],
-            stdout=subprocess.PIPE)
-        bleu_score = sacrebleu.stdout.strip()
-        scores_file = '{}/{}-scores.txt'.format(self.config["out_dir"], self.config["session"])
-        with open(scores_file, 'a') as f_score:
-            f_score.write("Epoch: {}, Bleu {}, Dev_loss: {}\n".format(epoch, bleu_score, total_loss))
-        return bleu_score, total_loss
+        # with torch.no_grad():
+        #     inputs = []
+        #     references = []
+        #     hypotheses = []
+        #
+        #     dataloader = data.make_data_iter(self.dataset_dev, self.config["batch_size_eval"], train=False)
+        #     for batch in tqdm(dataloader):
+        #         cuda = False if self.config["device"] == "cpu" else True
+        #         batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=cuda)
+    # def eval(self, step, epoch):
+    #     self.model.eval()
+    #     print("Evaluating...")
+    #     checkpoints_path = "{}/{}".format(self.config["out_dir"], self.config["predictions_dir"])
+    #     if not os.path.exists(checkpoints_path):
+    #         os.makedirs(checkpoints_path)
+    #
+    #     dataloader = data.make_data_iter(self.dataset_dev, self.config["batch_size_eval"], train=False)
+    #     file_name = '{}/{}/{}-{:03d}.raw.{}'.format(self.config["out_dir"], self.config["predictions_dir"], self.config["session"], epoch, self.config["tgt"])
+    #     total_loss = 0
+    #     for batch in tqdm(dataloader):
+    #         cuda = False if self.config["device"] == "cpu" else True
+    #         batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=cuda)
+    #
+    #         x = batch.src
+    #         prev = batch.trg_input
+    #         y = batch.trg
+    #
+    #         x_mask = batch.src_mask
+    #         prev_mask = batch.trg_mask
+    #
+    #         loss = self.model.forward(x, x_mask, prev, prev_mask, y, step + 1)
+    #         pred = self.model.predict(x, x_mask)
+    #         decoded = self.vocab_tgt.arrays_to_sentences(pred)
+    #
+    #         total_loss += loss
+    #
+    #         with open(file_name, 'a') as the_file:
+    #             for sent in decoded:
+    #                 the_file.write(' '.join(sent) + '\n')
+    #
+    #     total_loss /= len(dataloader)
+    #
+    #     ref = "{}/{}.detok.{}".format(self.config["data_dir"], self.config["dev_prefix"], self.config["tgt"])
+    #     sacrebleu = subprocess.run(['./scripts/evaluate.sh',
+    #         "{}/{}".format(self.config["out_dir"], self.config["predictions_dir"]),
+    #         self.config["session"],
+    #         '{:03d}'.format(epoch),
+    #         ref,
+    #         self.config["tgt"]],
+    #         stdout=subprocess.PIPE)
+    #     bleu_score = sacrebleu.stdout.strip()
+    #     scores_file = '{}/{}-scores.txt'.format(self.config["out_dir"], self.config["session"])
+    #     with open(scores_file, 'a') as f_score:
+    #         f_score.write("Epoch: {}, Bleu {}, Dev_loss: {}\n".format(epoch, bleu_score, total_loss))
+    #     return bleu_score, total_loss

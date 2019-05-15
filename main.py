@@ -1,7 +1,11 @@
 import json
 import argparse
+import cond_nmt_utils as cond_nmt_utils
+
+import torch
 from trainer import Trainer
-from utils import get_vocabularies, load_dataset, load_dataset_joey, setup_model
+from utils import load_dataset_joey, create_attention
+from models.utils import init_model
 
 def add_arguments(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
@@ -24,20 +28,19 @@ def add_arguments(parser):
     # Model
     parser.add_argument("--model_type", type=str, default="nmt", help="nmt|aevnmt")
     parser.add_argument("--emb_init_std", type=float, default=0.01, help="Standard deviation of embeddings initialization")
-    parser.add_argument("--emb_dim", type=int, default=256, help="Dimensionality of word embeddings")
-    parser.add_argument("--hidden_dim", type=int, default=256, help="Dimensionality of hidden units")
+    parser.add_argument("--emb_size", type=int, default=256, help="Dimensionality of word embeddings")
+    parser.add_argument("--hidden_size", type=int, default=256, help="Dimensionality of hidden units")
     parser.add_argument("--dropout", type=float, default=0.3, help="Dropout")
     parser.add_argument("--word_dropout", type=float, default=0.3, help="Word Dropout")
     parser.add_argument("--attention", type=str, default="bahdanau", help="Attention type: bahdanau|luong")
     parser.add_argument("--rnn_type", type=str, default="gru", help="Rnn type: gru|lstm")
     parser.add_argument("--max_len", type=int, default=50, help="Maximum sequence length")
-    parser.add_argument("--pass_hidden_state", type="bool", nargs="?", const=True, default=True, help="Whether to pass encoder's hidden state to decoder when using an attention based model.")
+    parser.add_argument("--pass_enc_final", type="bool", nargs="?", const=True, default=True, help="Whether to pass encoder's hidden state to decoder when using an attention based model.")
+    parser.add_argument("--share_vocab", type="bool", nargs="?", const=True, default=False, help="Whether to share vocabulary between source and target.")
 
     # Training
     parser.add_argument("--learning_rate", type=float, default=0.0003, help="Learning rate")
     parser.add_argument("--batch_size_train", type=int, default=64, help="Number of samples per batch during training")
-    parser.add_argument("--num_steps", type=int, default=140000, help="Number of training steps")
-    parser.add_argument("--steps_per_checkpoint", type=int, default=500, help="Number of steps per checkpoint")
     parser.add_argument("--kl_annealing_steps", type=int, default=80000, help="Number of steps for kl annealing")
     parser.add_argument("--max_gradient_norm", type=float, default=4.0, help="Max norm of the gradients")
     parser.add_argument("--latent_size", type=int, default=32, help="Size of the latent variable")
@@ -45,9 +48,8 @@ def add_arguments(parser):
 
     # Evaluation
     parser.add_argument("--batch_size_eval", type=int, default=64, help="Number of samples per batch during evaluation")
-    parser.add_argument("--steps_per_eval", type=int, default=500, help="Number of steps per eval")
     parser.add_argument("--beam_width", type=int, default=10, help="Number of partial hypotheses")
-    parser.add_argument("--length_penalty", type=int, default=1, help="Factor for length penalty")
+    parser.add_argument("--length_penalty", type=float, default=1.0, help="Factor for length penalty")
 
     # Output
     parser.add_argument("--out_dir", type=str, default="output", help="Path to output directory")
@@ -57,8 +59,7 @@ def add_arguments(parser):
     # Misc
     parser.add_argument("--session", type=str, default=None, required=True,  help="Name of sessions, used for output files")
     parser.add_argument("--device", type=str, default="cuda", help="Device to train on: cuda|cpu")
-    parser.add_argument("--num_seqs", type=int, default=None, help="Number of sequences in dataset")
-    parser.add_argument("--num_improv_checks", type=int, default=20, help="Number of checks whether metric-score has improved")
+    parser.add_argument("--patience", type=int, default=10, help="Number of checks whether metric-score has improved")
     parser.add_argument("--config", type=str, default=None, help="Path to config file")
 
 def setup_config():
@@ -81,27 +82,28 @@ def setup_config():
         # Model
         "model_type":FLAGS.model_type,
         "emb_init_std":FLAGS.emb_init_std,
-        "emb_dim":FLAGS.emb_dim,
-        "hidden_dim":FLAGS.hidden_dim,
+        "emb_size":FLAGS.emb_size,
+        "hidden_size":FLAGS.hidden_size,
         "max_len":FLAGS.max_len,
         "dropout":FLAGS.dropout,
         "word_dropout":FLAGS.word_dropout,
         "attention":FLAGS.attention,
-        "pass_hidden_state":FLAGS.pass_hidden_state,
+        "pass_enc_final":FLAGS.pass_enc_final,
         "latent_size":FLAGS.latent_size,
+        "share_vocab":FLAGS.share_vocab,
 
         # Training
         "learning_rate":FLAGS.learning_rate,
         "batch_size_train":FLAGS.batch_size_train,
-        "num_steps":FLAGS.num_steps,
-        "steps_per_checkpoint":FLAGS.steps_per_checkpoint,
+        # "num_steps":FLAGS.num_steps,
+        # "steps_per_checkpoint":FLAGS.steps_per_checkpoint,
         "kl_annealing_steps":FLAGS.kl_annealing_steps,
         "max_gradient_norm":FLAGS.max_gradient_norm,
 
         # Evaluation
         "beam_width":FLAGS.beam_width,
         "batch_size_eval":FLAGS.batch_size_eval,
-        "steps_per_eval":FLAGS.steps_per_eval,
+        # "steps_per_eval":FLAGS.steps_per_eval,
         "length_penalty":FLAGS.length_penalty,
 
         # Output
@@ -112,8 +114,7 @@ def setup_config():
         # Misc
         "session":FLAGS.session,
         "device":FLAGS.device,
-        "num_seqs":FLAGS.num_seqs,
-        "num_improv_checks":FLAGS.num_improv_checks
+        "patience":FLAGS.patience
     }
 
     # Loads config from json
@@ -131,12 +132,31 @@ def print_config(config):
         print("  {}: {}".format(i, config[i]))
     print("\n")
 
+def create_model(vocab_src, vocab_tgt, config):
+    if config["model_type"] == "cond_nmt":
+        model = cond_nmt_utils.create_model(vocab_src, vocab_tgt, config)
+        train_fn = cond_nmt_utils.train_step
+        validate_fn = cond_nmt_utils.validate
+    else:
+        raise ValueError("Unknown model type: {}".format(config["model_type"]))
+    return model, train_fn, validate_fn
+
 def main():
     config = setup_config()
     print_config(config)
     train_data, dev_data, vocab_src, vocab_tgt = load_dataset_joey(config)
-    model = setup_model(vocab_src, vocab_tgt, config)
-    trainer = Trainer(model, vocab_src, vocab_tgt, train_data, dev_data, config)
+
+    model, train_fn, validate_fn = create_model(vocab_src, vocab_tgt, config)
+    model.to(torch.device(config["device"]))
+
+    init_model(
+        model,
+        vocab_src.stoi[config["pad"]],
+        vocab_tgt.stoi[config["pad"]],
+        config
+    )
+
+    trainer = Trainer(model, train_fn, validate_fn, vocab_src, vocab_tgt, train_data, dev_data, config)
     trainer.train_model2()
 
 if __name__ == '__main__':
