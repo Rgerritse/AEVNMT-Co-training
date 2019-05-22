@@ -1,11 +1,12 @@
 import json
 import argparse
 import cond_nmt_utils as cond_nmt_utils
+import aevnmt_utils as aevnmt_utils
 
 import torch
 from trainer import Trainer
 from utils import load_dataset_joey, create_attention
-from models.utils import init_model
+from modules.utils import init_model
 
 def add_arguments(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
@@ -41,7 +42,6 @@ def add_arguments(parser):
     # Training
     parser.add_argument("--learning_rate", type=float, default=0.0003, help="Learning rate")
     parser.add_argument("--batch_size_train", type=int, default=64, help="Number of samples per batch during training")
-    parser.add_argument("--kl_annealing_steps", type=int, default=80000, help="Number of steps for kl annealing")
     parser.add_argument("--max_gradient_norm", type=float, default=4.0, help="Max norm of the gradients")
     parser.add_argument("--latent_size", type=int, default=32, help="Size of the latent variable")
 
@@ -95,9 +95,6 @@ def setup_config():
         # Training
         "learning_rate":FLAGS.learning_rate,
         "batch_size_train":FLAGS.batch_size_train,
-        # "num_steps":FLAGS.num_steps,
-        # "steps_per_checkpoint":FLAGS.steps_per_checkpoint,
-        "kl_annealing_steps":FLAGS.kl_annealing_steps,
         "max_gradient_norm":FLAGS.max_gradient_norm,
 
         # Evaluation
@@ -137,8 +134,13 @@ def create_model(vocab_src, vocab_tgt, config):
         model = cond_nmt_utils.create_model(vocab_src, vocab_tgt, config)
         train_fn = cond_nmt_utils.train_step
         validate_fn = cond_nmt_utils.validate
+    elif config["model_type"] == "aevnmt":
+        model = aevnmt_utils.create_model(vocab_src, vocab_tgt, config)
+        train_fn = aevnmt_utils.train_step
+        validate_fn = aevnmt_utils.validate
     else:
         raise ValueError("Unknown model type: {}".format(config["model_type"]))
+    print("model: ", model)
     return model, train_fn, validate_fn
 
 def main():
@@ -157,7 +159,7 @@ def main():
     )
 
     trainer = Trainer(model, train_fn, validate_fn, vocab_src, vocab_tgt, train_data, dev_data, config)
-    trainer.train_model2()
+    trainer.train_model()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

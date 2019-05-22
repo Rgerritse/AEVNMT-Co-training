@@ -26,7 +26,8 @@ class CondNMT(nn.Module):
     def forward(self, x, x_mask, y):
         enc_output, enc_final = self.encode(x)
         dec_hidden = self.decoder.initialize(enc_output, enc_final)
-
+        
+        # Decode function
         outputs = []
         max_len = y.shape[-1]
         for t in range(max_len):

@@ -11,14 +11,15 @@ def beam_search(decoder, emb_tgt, logits_layer, enc_output, dec_hidden, x_mask, 
         batch_size = x_mask.shape[0]
 
         if config["rnn_type"] == "gru":
-            dec_hidden = tile(dec_hidden, size, dim=0)
+            dec_hidden = tile(dec_hidden, size, dim=1)
         elif config["rnn_type"] == "lstm":
-            h_n = tile(dec_hidden[0], size, dim=0)
-            c_n = tile(dec_hidden[1], size, dim=0)
+            h_n = tile(dec_hidden[0], size, dim=1)
+            c_n = tile(dec_hidden[1], size, dim=1)
             dec_hidden = (h_n, c_n)
 
         enc_output = tile(enc_output.contiguous(), size, dim=0)
         x_mask = tile(x_mask, size, dim=0)
+        decoder.attention.proj_keys = tile(decoder.attention.proj_keys, size, dim=0)
 
         batch_offset = torch.arange(batch_size, dtype=torch.long, device=enc_output.device)
         beam_offset = torch.arange(
@@ -49,7 +50,7 @@ def beam_search(decoder, emb_tgt, logits_layer, enc_output, dec_hidden, x_mask, 
 
         for step in range(config["max_len"]):
             # decoder.attention.proj_keys = tile(decoder.attention.proj_keys, size, dim=0)
-            decoder.attention.compute_proj_keys(enc_output)
+            # decoder.attention.compute_proj_keys(enc_output)
             prev_y = alive_seq[:, -1].view(-1, 1)
             embed_y = emb_tgt(prev_y)
             pre_output, dec_hidden = decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden)
@@ -135,11 +136,13 @@ def beam_search(decoder, emb_tgt, logits_layer, enc_output, dec_hidden, x_mask, 
                 # reorder indices, outputs and masks
                 select_indices = batch_index.view(-1)
 
+                decoder.attention.proj_keys = decoder.attention.proj_keys.index_select(0, select_indices)
+
                 if config["rnn_type"] == "gru":
-                    dec_hidden = dec_hidden.index_select(0, select_indices)
+                    dec_hidden = dec_hidden.index_select(1, select_indices)
                 elif config["rnn_type"] == "lstm":
-                    h_n = dec_hidden[0].index_select(0, select_indices)
-                    c_n = dec_hidden[1].index_select(0, select_indices)
+                    h_n = dec_hidden[0].index_select(1, select_indices)
+                    c_n = dec_hidden[1].index_select(1, select_indices)
                     dec_hidden = (h_n, c_n)
 
                 enc_output = enc_output.index_select(0, select_indices)

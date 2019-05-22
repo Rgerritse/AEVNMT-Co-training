@@ -10,10 +10,14 @@ def rnn_creation_fn(rnn_type):
     elif rnn_type == "lstm":
         return nn.LSTM
 
-def make_hidden_state(hidden, rnn_type):
-    if rnn_type == "lstm":
+def tile_rnn_hidden(hidden, rnn):
+    num_layers = rnn.num_layers
+    num_layers = num_layers * 2 if rnn.bidirectional else num_layers
+    hidden = hidden.repeat(num_layers, 1, 1)
+    if isinstance(rnn, nn.LSTM):
         hidden = (hidden, hidden)
     return hidden
+
 
 def xavier_uniform_n_(w, gain=1., n=4):
     """

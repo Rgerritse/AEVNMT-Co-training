@@ -6,6 +6,7 @@ from torch.nn.utils import clip_grad_norm_
 import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
+from utils import create_prev_x
 
 class Trainer():
     def __init__(self, model, train_fn, validate_fn, vocab_src, vocab_tgt, dataset_train, dataset_dev, config):
@@ -19,88 +20,17 @@ class Trainer():
         self.config = config
         self.device =  torch.device(config["device"])
 
+        self.src_sos_idx = vocab_src.stoi[config["sos"]]
+        self.src_eos_idx = vocab_src.stoi[config["eos"]]
+        self.src_pad_idx = vocab_src.stoi[config["pad"]]
+        self.src_unk_idx = vocab_src.stoi[config["unk"]]
+
+        self.tgt_sos_idx = vocab_tgt.stoi[config["sos"]]
+        self.tgt_eos_idx = vocab_tgt.stoi[config["eos"]]
+        self.tgt_pad_idx = vocab_tgt.stoi[config["pad"]]
+        self.tgt_unk_idx = vocab_tgt.stoi[config["unk"]]
+
     def train_model(self):
-        print("Training...")
-        checkpoints_path = "{}/{}".format(self.config["out_dir"], self.config["checkpoints_dir"])
-
-        dataloader = data.make_data_iter(self.dataset_train, self.config["batch_size_train"], train=True)
-        parameters = filter(lambda p: p.requires_grad, self.model.parameters())
-        opt = torch.optim.Adam(parameters, lr=self.config["learning_rate"])
-
-        saved_step = 0
-        if os.path.exists(checkpoints_path):
-            checkpoints = [cp for cp in sorted(os.listdir(checkpoints_path)) if '-'.join(cp.split('-')[:-1]) == self.config["session"]]
-            if checkpoints:
-                state = torch.load('{}/{}'.format(checkpoints_path, checkpoints[-1]))
-                saved_step = state['step']
-                self.model.load_state_dict(state['state_dict'])
-                opt.load_state_dict(state['optimizer'])
-
-        max_bleu = 0.0
-        unimproved_bleu_checks = 0
-        dataloader_iterator = iter(dataloader)
-        for step in range(saved_step, self.config["num_steps"]):
-            self.model.train()
-            start_time = time.time()
-
-            try:
-                batch = next(dataloader_iterator)
-            except StopIteration:
-                dataloader_iterator = iter(dataloader)
-                batch = next(dataloader_iterator)
-
-            cuda = False if self.config["device"] == "cpu" else True
-            batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=cuda)
-
-            opt.zero_grad()
-
-            x = batch.src
-            prev = batch.trg_input
-            y = batch.trg
-
-            x_mask = batch.src_mask
-            prev_mask = batch.trg_mask
-
-
-            loss = self.model.forward(x, x_mask, prev)
-
-            loss.backward()
-            clip_grad_norm_(self.model.parameters(), self.config["max_gradient_norm"])
-            opt.step()
-
-            batch_spd = (time.time() - start_time)
-
-            print("Step {:06d}/{:06d} , Loss: {:.2f}, Batch time: {:.1f}s".format(
-                step + 1,
-                self.config["num_steps"],
-                loss.item(),
-                batch_spd)
-            )
-
-            if (step + 1) % self.config["steps_per_checkpoint"] == 0:
-                if not os.path.exists(checkpoints_path):
-                    os.makedirs(checkpoints_path)
-                state = {
-                    'step': step + 1,
-                    'state_dict': self.model.state_dict(),
-                    'optimizer': opt.state_dict(),
-                }
-                torch.save(state, '{}/{}-{:06d}'.format(checkpoints_path, self.config["session"], step + 1))
-
-            if (step + 1) % self.config["steps_per_eval"] == 0:
-                with torch.no_grad():
-                    bleu_score = self.eval(step + 1)
-                    print("Blue score: ", bleu_score)
-
-                if float(bleu_score) > max_bleu:
-                    max_bleu = float(bleu_score)
-                    unimproved_bleu_checks = 0
-                else:
-                    unimproved_bleu_checks += 1
-                    if unimproved_bleu_checks >= self.config["num_improv_checks"]:
-                        break
-
-    def train_model2(self):
         print("Training...")
         checkpoints_path = "{}/{}".format(self.config["out_dir"], self.config["checkpoints_dir"])
 
@@ -109,8 +39,11 @@ class Trainer():
         opt = torch.optim.Adam(parameters, lr=self.config["learning_rate"])
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             opt,
+            mode="max",
             factor=self.config["lr_reduce_factor"],
             patience=self.config["lr_reduce_patience"],
+            threshold=1e-2,
+            threshold_mode="abs",
             cooldown=self.config["lr_reduce_cooldown"],
             min_lr=self.config["min_lr"]
         )
@@ -139,13 +72,26 @@ class Trainer():
                 opt.zero_grad()
 
                 x = batch.src
-                prev = batch.trg_input
+                prev_x, x_mask = create_prev_x(x, self.src_sos_idx, self.src_pad_idx)
+
                 y = batch.trg
+                prev_y = batch.trg_input
 
-                x_mask = batch.src_mask
-                prev_mask = batch.trg_mask
+                if self.config["word_dropout"] > 0:
+                    probs_prev_x = torch.zeros(prev_x.shape).uniform_(0, 1).to(prev_x.device)
+                    prev_x = torch.where(
+                        (probs_prev_x > self.config["word_dropout"]) | (prev_x == self.src_pad_idx) | (prev_x == self.src_eos_idx),
+                        prev_x,
+                        torch.empty(prev_x.shape, dtype=torch.int64).fill_(self.src_unk_idx).to(prev_x.device)
+                    )
+                    probs_prev_y = torch.zeros(prev_y.shape).uniform_(0, 1).to(prev_y.device)
+                    prev_y = torch.where(
+                        (probs_prev_y > self.config["word_dropout"]) | (prev_y == self.tgt_pad_idx) | (prev_y == self.tgt_eos_idx),
+                        prev_y,
+                        torch.empty(prev_y.shape, dtype=torch.int64).fill_(self.tgt_unk_idx).to(prev_y.device)
+                    )
 
-                loss = self.train_fn(self.model, x, x_mask, prev, y)
+                loss = self.train_fn(self.model, prev_x, x, x_mask, prev_y, y, step)
                 loss.backward()
 
                 if self.config["max_gradient_norm"] > 0:
@@ -164,15 +110,6 @@ class Trainer():
             val_bleu = self.evaluate(epoch)
             scheduler.step(float(val_bleu))
 
-            print("Blue score: {}".format(val_bleu))
-            if float(val_bleu) > max_bleu:
-                max_bleu = float(val_bleu)
-                patience_counter = 0
-            else:
-                patience_counter += 1
-                if patience_counter >= self.config["patience"]:
-                    break
-
             # Save checkpoint
             if not os.path.exists(checkpoints_path):
                 os.makedirs(checkpoints_path)
@@ -186,6 +123,15 @@ class Trainer():
             }
             torch.save(state, '{}/{}-{:03d}'.format(checkpoints_path, self.config["session"], epoch + 1))
 
+            print("Blue score: {}".format(val_bleu))
+            if float(val_bleu) > max_bleu:
+                max_bleu = float(val_bleu)
+                patience_counter = 0
+            else:
+                patience_counter += 1
+                if patience_counter >= self.config["patience"]:
+                    break
+
     def evaluate(self, epoch):
         checkpoints_path = "{}/{}".format(self.config["out_dir"], self.config["predictions_dir"])
         if not os.path.exists(checkpoints_path):
@@ -197,65 +143,7 @@ class Trainer():
             self.dataset_dev,
             self.vocab_src,
             self.vocab_tgt,
-            epoch,
+            epoch + 1,
             self.config
         )
         return val_bleu
-
-
-
-        # with torch.no_grad():
-        #     inputs = []
-        #     references = []
-        #     hypotheses = []
-        #
-        #     dataloader = data.make_data_iter(self.dataset_dev, self.config["batch_size_eval"], train=False)
-        #     for batch in tqdm(dataloader):
-        #         cuda = False if self.config["device"] == "cpu" else True
-        #         batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=cuda)
-    # def eval(self, step, epoch):
-    #     self.model.eval()
-    #     print("Evaluating...")
-    #     checkpoints_path = "{}/{}".format(self.config["out_dir"], self.config["predictions_dir"])
-    #     if not os.path.exists(checkpoints_path):
-    #         os.makedirs(checkpoints_path)
-    #
-    #     dataloader = data.make_data_iter(self.dataset_dev, self.config["batch_size_eval"], train=False)
-    #     file_name = '{}/{}/{}-{:03d}.raw.{}'.format(self.config["out_dir"], self.config["predictions_dir"], self.config["session"], epoch, self.config["tgt"])
-    #     total_loss = 0
-    #     for batch in tqdm(dataloader):
-    #         cuda = False if self.config["device"] == "cpu" else True
-    #         batch = Batch(batch, self.vocab_src.stoi[self.config["pad"]], use_cuda=cuda)
-    #
-    #         x = batch.src
-    #         prev = batch.trg_input
-    #         y = batch.trg
-    #
-    #         x_mask = batch.src_mask
-    #         prev_mask = batch.trg_mask
-    #
-    #         loss = self.model.forward(x, x_mask, prev, prev_mask, y, step + 1)
-    #         pred = self.model.predict(x, x_mask)
-    #         decoded = self.vocab_tgt.arrays_to_sentences(pred)
-    #
-    #         total_loss += loss
-    #
-    #         with open(file_name, 'a') as the_file:
-    #             for sent in decoded:
-    #                 the_file.write(' '.join(sent) + '\n')
-    #
-    #     total_loss /= len(dataloader)
-    #
-    #     ref = "{}/{}.detok.{}".format(self.config["data_dir"], self.config["dev_prefix"], self.config["tgt"])
-    #     sacrebleu = subprocess.run(['./scripts/evaluate.sh',
-    #         "{}/{}".format(self.config["out_dir"], self.config["predictions_dir"]),
-    #         self.config["session"],
-    #         '{:03d}'.format(epoch),
-    #         ref,
-    #         self.config["tgt"]],
-    #         stdout=subprocess.PIPE)
-    #     bleu_score = sacrebleu.stdout.strip()
-    #     scores_file = '{}/{}-scores.txt'.format(self.config["out_dir"], self.config["session"])
-    #     with open(scores_file, 'a') as f_score:
-    #         f_score.write("Epoch: {}, Bleu {}, Dev_loss: {}\n".format(epoch, bleu_score, total_loss))
-    #     return bleu_score, total_loss

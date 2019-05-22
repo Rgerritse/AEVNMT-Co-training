@@ -1,15 +1,15 @@
 {
-    "attention": "bahdanau",
+    "attention": "luong",
     "batch_size_train": 40,
     "beam_width": 10,
     "rnn_type": "lstm",
     "dropout": 0.5,
-    "emb_dim": 256,
-    "hidden_dim": 256,
+    "emb_size": 256,
+    "hidden_size": 256,
     "kl_free_nats": 5,
-    "latent_size": 32,
     "learning_rate": 0.002,
     "length_penalty": 1.0,
+    "latent_size": 32,
     "lr_reduce_cooldown": 2,
     "lr_reduce_factor": 0.5,
     "lr_reduce_patience": 2,
@@ -17,6 +17,10 @@
     "max_len": 50,
     "min_lr": 1e-05,
     "model_type": "aevnmt",
-    "num_epochs": 30,
-    "share_vocab": true
+    "num_epochs": 50,
+    "pass_enc_final": false,
+    "patience": 10,
+    "share_vocab": true,
+    "subword_token": "@@",
+    "word_dropout": 0.3
 }
