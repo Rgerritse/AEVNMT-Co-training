@@ -1,5 +1,5 @@
 {
-    "attention": "bahdanau",
+    "attention": "luong",
     "batch_size_train": 40,
     "beam_width": 10,
     "rnn_type": "lstm",
@@ -15,9 +15,10 @@
     "max_len": 50,
     "min_lr": 1e-05,
     "model_type": "cond_nmt",
-    "num_epochs": 30,
+    "num_epochs": 50,
     "pass_enc_final": true,
     "patience": 10,
     "share_vocab": true,
+    "subword_token": "@@",
     "word_dropout": 0.0
 }
