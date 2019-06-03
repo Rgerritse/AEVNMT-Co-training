@@ -3,6 +3,44 @@ import torch.nn.functional as F
 import numpy as np
 from joeynmt.helpers import tile
 
+
+def greedy_lm(decoder, emb_tgt, logits_layer, lm_hidden, sos_idx, batch_size, config):
+    prev_y = torch.full(size=[batch_size, 1], fill_value=sos_idx, dtype=torch.long,
+                            device=lm_hidden[0].device)
+    output = []
+    for t in range(config["max_len"]):
+        # decode one single step
+        embed_y = emb_tgt(prev_y)
+        pre_output, lm_hidden = decoder.forward_step(embed_y, lm_hidden)
+        logits = logits_layer(pre_output)
+
+        # greedy decoding: choose arg max over vocabulary in each step
+        next_word = torch.argmax(logits, dim=-1)  # batch x time=1
+        output.append(next_word.squeeze(1).cpu().numpy())
+        prev_y = next_word
+        # attention_scores.append(att_probs.squeeze(1).cpu().numpy())
+    stacked_output = np.stack(output, axis=1)  # batch, time
+    return stacked_output
+
+def greedy(decoder, emb_tgt, logits_layer, enc_output, dec_hidden, x_mask, sos_idx, config):
+    batch_size = x_mask.size(0)
+    prev_y = x_mask.new_full(size=[batch_size, 1], fill_value=sos_idx,
+                               dtype=torch.long)
+    output = []
+    for t in range(config["max_len"]):
+        # decode one single step
+        embed_y = emb_tgt(prev_y)
+        pre_output, dec_hidden = decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden)
+        logits = logits_layer(pre_output)
+
+        # greedy decoding: choose arg max over vocabulary in each step
+        next_word = torch.argmax(logits, dim=-1)  # batch x time=1
+        output.append(next_word.squeeze(1).cpu().numpy())
+        prev_y = next_word
+        # attention_scores.append(att_probs.squeeze(1).cpu().numpy())
+    stacked_output = np.stack(output, axis=1)  # batch, time
+    return stacked_output
+
 def beam_search(decoder, emb_tgt, logits_layer, enc_output, dec_hidden, x_mask, tgt_vocab_size, sos_idx, eos_idx, pad_idx, config):
     n_best = 1
     decoder.eval()

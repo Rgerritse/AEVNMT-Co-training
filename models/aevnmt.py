@@ -62,7 +62,6 @@ class AEVNMT(nn.Module):
         enc_output, enc_final = self.encode(x, z)
         dec_hidden = self.init_decoder(enc_output, enc_final, z)
 
-
         outputs = []
         max_len = y.shape[-1]
         for t in range(max_len):

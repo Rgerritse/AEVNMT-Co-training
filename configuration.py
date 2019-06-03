@@ -1,13 +1,4 @@
-import json
-import argparse
-import cond_nmt_utils as cond_nmt_utils
-import aevnmt_utils as aevnmt_utils
-
-import torch
-from trainer import Trainer
-from utils import load_dataset_joey, create_attention
-from modules.utils import init_model
-from configuration import setup_config
+import argparse, json
 
 def add_arguments(parser):
     parser.register("type", "bool", lambda v: v.lower() == "true")
@@ -63,7 +54,17 @@ def add_arguments(parser):
     parser.add_argument("--patience", type=int, default=10, help="Number of checks whether metric-score has improved")
     parser.add_argument("--config", type=str, default=None, help="Path to config file")
 
+def print_config(config):
+    print("Configuration: ")
+    for i in sorted(config):
+        print("  {}: {}".format(i, config[i]))
+    print("\n")
+
 def setup_config():
+    parser = argparse.ArgumentParser()
+    add_arguments(parser)
+    FLAGS, unparsed = parser.parse_known_args()
+
     config = {
         # Data
         "src":FLAGS.src,
@@ -72,6 +73,9 @@ def setup_config():
         "train_prefix":FLAGS.train_prefix,
         "dev_prefix":FLAGS.dev_prefix,
         "test_prefix":FLAGS.test_prefix,
+        "mono_prefix":"training.mono",
+        # "src_mono_path":"training.mono.translation.en",
+        # "tgt_mono_path":"training.mono.de",
 
         # Vocab
         "vocab_prefix":FLAGS.vocab_prefix,
@@ -122,48 +126,5 @@ def setup_config():
             for key, value in config_json.items():
                 config[key] = value
 
-    return config
-
-def print_config(config):
-    print("Configuration: ")
-    for i in sorted(config):
-        print("  {}: {}".format(i, config[i]))
-    print("\n")
-
-def create_model(vocab_src, vocab_tgt, config):
-    if config["model_type"] == "cond_nmt":
-        model = cond_nmt_utils.create_model(vocab_src, vocab_tgt, config)
-        train_fn = cond_nmt_utils.train_step
-        validate_fn = cond_nmt_utils.validate
-    elif config["model_type"] == "aevnmt":
-        model = aevnmt_utils.create_model(vocab_src, vocab_tgt, config)
-        train_fn = aevnmt_utils.train_step
-        validate_fn = aevnmt_utils.validate
-    else:
-        raise ValueError("Unknown model type: {}".format(config["model_type"]))
-    print("Model: ", model)
-    return model, train_fn, validate_fn
-
-def main():
-    config = setup_config()
     print_config(config)
-    train_data, dev_data, vocab_src, vocab_tgt = load_dataset_joey(config)
-
-    model, train_fn, validate_fn = create_model(vocab_src, vocab_tgt, config)
-    model.to(torch.device(config["device"]))
-
-    init_model(
-        model,
-        vocab_src.stoi[config["pad"]],
-        vocab_tgt.stoi[config["pad"]],
-        config
-    )
-
-    trainer = Trainer(model, train_fn, validate_fn, vocab_src, vocab_tgt, train_data, dev_data, config)
-    trainer.train_model()
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    add_arguments(parser)
-    FLAGS, unparsed = parser.parse_known_args()
-    main()
+    return config
