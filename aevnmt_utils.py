@@ -52,7 +52,7 @@ def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
                 model.decoder.logits_layer, enc_output, dec_hidden, x_mask, len(vocab_tgt),
                 vocab_tgt.stoi[config["sos"]], vocab_tgt.stoi[config["eos"]],
                 vocab_tgt.stoi[config["pad"]], config)
-
+                
             model_hypotheses += vocab_tgt.arrays_to_sentences(raw_hypothesis)
             references += vocab_tgt.arrays_to_sentences(y)
 

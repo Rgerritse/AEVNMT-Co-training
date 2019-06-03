@@ -38,7 +38,7 @@ def xavier_uniform_n_(w, gain=1., n=4):
         nn.init.uniform_(w, -a, a)
 
 def init_model(model, src_pad_idx, tgt_pad_idx, config):
-    print("Initilizing model parameters...")
+    print("Initializing model parameters...")
     xavier_gain = 1.
 
     with torch.no_grad():

@@ -16,7 +16,7 @@
     "max_gradient_norm": 4.0,
     "max_len": 50,
     "min_lr": 1e-05,
-    "model_type": "aevnmt",
+    "model_type": "coaevnmt",
     "num_epochs": 50,
     "pass_enc_final": true,
     "patience": 10,

@@ -1,6 +1,7 @@
 import re
 from joeynmt import data
 from joeynmt.attention import BahdanauAttention, LuongAttention
+from joeynmt.constants import UNK_TOKEN, EOS_TOKEN, BOS_TOKEN, PAD_TOKEN
 import subprocess
 import sacrebleu
 import torch
@@ -20,6 +21,29 @@ def load_dataset_joey(config):
     }
     train_data, dev_data, _, src_vocab, tgt_vocab = data.load_data(data_cfg)
     return train_data, dev_data, src_vocab, tgt_vocab
+
+def load_mono_datasets(config, train_data):
+    tok_fun = lambda s: s.split()
+
+    src_field = data.Field(init_token=None, eos_token=EOS_TOKEN,
+                           pad_token=PAD_TOKEN, tokenize=tok_fun,
+                           batch_first=True, lower=False,
+                           unk_token=UNK_TOKEN,
+                           include_lengths=True)
+
+    trg_field = data.Field(init_token=BOS_TOKEN, eos_token=EOS_TOKEN,
+                           pad_token=PAD_TOKEN, tokenize=tok_fun,
+                           unk_token=UNK_TOKEN,
+                           batch_first=True, lower=False,
+                           include_lengths=True)
+
+    mono_path = config["data_dir"] + "/" + config["mono_prefix"]
+    train_src_mono = data.MonoDataset(mono_path, ".translation.en", src_field)
+    train_tgt_mono = data.MonoDataset(mono_path, ".de", src_field)
+
+    src_field.build_vocab(train_data)
+    trg_field.build_vocab(train_data)
+    return train_src_mono, train_tgt_mono
 
 def create_prev_x(x, sos_idx, pad_idx):
     prev_x = []

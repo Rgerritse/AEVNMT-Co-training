@@ -11,12 +11,16 @@ class LanguageModel(nn.Module):
         self.logits_layer = nn.Linear(config["hidden_size"], vocab_src_size, bias=False)
         self.dropout = nn.Dropout(config["dropout"])
 
+    def forward_step(self, prev_x, hidden):
+        output, hidden = self.rnn(prev_x, hidden)
+        return output, hidden
+
     def forward(self, embed_x, hidden):
         outputs = []
         max_len = embed_x.shape[1]
         for t in range(max_len):
             prev_x = embed_x[:, t:t+1, :]
-            output, hidden = self.rnn(prev_x, hidden)
+            output, hidden = self.forward_step(prev_x, hidden)
             logits = self.logits_layer(self.dropout(output))
             outputs.append(logits)
         return torch.cat(outputs, dim=1)
