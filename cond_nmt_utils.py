@@ -35,9 +35,6 @@ def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
             prev_x, x_mask = create_prev_x(x, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
             y = batch.trg
 
-
-
-
             enc_output, enc_hidden = model.encode(prev_x)
             dec_hidden = model.decoder.initialize(enc_output, enc_hidden)
 

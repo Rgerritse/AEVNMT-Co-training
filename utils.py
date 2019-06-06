@@ -22,7 +22,7 @@ def load_dataset_joey(config):
     train_data, dev_data, _, src_vocab, tgt_vocab = data.load_data(data_cfg)
     return train_data, dev_data, src_vocab, tgt_vocab
 
-def load_mono_datasets(config, train_data):
+def load_mono_datasets(config, src_vocab, tgt_vocab):
     tok_fun = lambda s: s.split()
 
     src_field = data.Field(init_token=None, eos_token=EOS_TOKEN,
@@ -41,11 +41,12 @@ def load_mono_datasets(config, train_data):
     train_src_mono = data.MonoDataset(mono_path, ".translation.en", src_field)
     train_tgt_mono = data.MonoDataset(mono_path, ".de", src_field)
 
-    src_field.build_vocab(train_data)
-    trg_field.build_vocab(train_data)
+    src_field.vocab = src_vocab
+    trg_field.vocab = tgt_vocab
+
     return train_src_mono, train_tgt_mono
 
-def create_prev_x(x, sos_idx, pad_idx):
+def create_prev(x, sos_idx, pad_idx):
     prev_x = []
     for t in range(x.shape[1]):
         if t == 0:
