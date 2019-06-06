@@ -7,7 +7,8 @@ from configuration import setup_config
 from utils import load_dataset_joey, load_mono_datasets
 import coaevnmt_utils as coaevnmt_utils
 from modules.utils import init_model
-from utils import create_prev_x
+from utils import create_prev
+from torch.nn.utils import clip_grad_norm_
 
 def create_model(vocab_src, vocab_tgt, config):
     if config["model_type"] == "coaevnmt":
@@ -19,7 +20,7 @@ def create_model(vocab_src, vocab_tgt, config):
     print("Model: ", model)
     return model, train_fn, validate_fn
 
-def train(model, train_fn, validate_fn, dataloader, src_mono_iter, tgt_mono_iter, vocab_src, vocab_tgt, config):
+def train(model, train_fn, validate_fn, dataloader, dataset_dev, src_mono_buck, tgt_mono_buck, vocab_src, vocab_tgt, config):
     src_sos_idx = vocab_src.stoi[config["sos"]]
     src_eos_idx = vocab_src.stoi[config["eos"]]
     src_pad_idx = vocab_src.stoi[config["pad"]]
@@ -59,6 +60,8 @@ def train(model, train_fn, validate_fn, dataloader, src_mono_iter, tgt_mono_iter
             opt.load_state_dict(state['optimizer'])
             scheduler.load_state_dict(state['scheduler'])
 
+    tgt_mono_iter = iter(tgt_mono_buck)
+    src_mono_iter = iter(src_mono_buck)
     cuda = False if config["device"] == "cpu" else True
     for epoch in range(saved_epoch, config["num_epochs"]):
         for step, batch in enumerate(dataloader):
@@ -67,11 +70,31 @@ def train(model, train_fn, validate_fn, dataloader, src_mono_iter, tgt_mono_iter
             batch = Batch(batch, vocab_src.stoi[config["pad"]], use_cuda=cuda)
 
             x = batch.src
-            prev_x, x_mask = create_prev_x(x, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
+            prev_x, x_mask = create_prev(x, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
 
             y = batch.trg
             prev_y = batch.trg_input
             y_mask = (prev_y != vocab_tgt.stoi[config["pad"]]).unsqueeze(-2)
+
+            try:
+                y_mono_batch = next(tgt_mono_iter)
+            except:
+                tgt_mono_iter = iter(tgt_mono_buck)
+                y_mono_batch = next(tgt_mono_iter).src[0]
+            y_mono_batch = Batch(y_mono_batch, vocab_tgt.stoi[config["pad"]], use_cuda=cuda)
+            y_mono = y_mono_batch.src
+
+            prev_y_mono, y_mono_mask = create_prev(y_mono, vocab_tgt.stoi[config["sos"]], vocab_tgt.stoi[config["pad"]])
+
+            try:
+                x_mono_batch = next(src_mono_iter)
+            except:
+                src_mono_iter = iter(src_mono_buck)
+                x_mono_batch = next(src_mono_iter).src[0]
+            x_mono_batch = Batch(x_mono_batch, vocab_src.stoi[config["pad"]], use_cuda=cuda)
+            x_mono = x_mono_batch.src
+
+            prev_x_mono, x_mono_mask = create_prev(x_mono, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
 
             # Print statements to check sentences
             # print("x: ", vocab_src.array_to_sentence(x[-1].cpu().numpy(), cut_at_eos=False))
@@ -94,19 +117,74 @@ def train(model, train_fn, validate_fn, dataloader, src_mono_iter, tgt_mono_iter
                 )
                 # Should probably do word_dropout on monolingual sentences???
 
-            loss = train_fn(model, prev_x, x, x_mask, prev_y, y, y_mask, step)
-            loss.backward()
-            asd
 
+
+            loss = train_fn(model, prev_x, x, x_mask, prev_y, y, y_mask, prev_y_mono, y_mono, y_mono_mask, prev_x_mono, x_mono, x_mono_mask, src_pad_idx, tgt_pad_idx, step)
+            loss.backward()
+
+            if config["max_gradient_norm"] > 0:
+                clip_grad_norm_(model.parameters(), config["max_gradient_norm"])
+
+            opt.step()
+
+            print("Epoch: {:03d}/{:03d}, Batch {:05d}/{:05d}, Loss: {:.2f}".format(
+                epoch + 1,
+                config["num_epochs"],
+                step + 1,
+                len(dataloader),
+                loss.item())
+            )
+
+        val_bleu = evaluate(model, validate_fn, dataset_dev, vocab_src, vocab_tgt, epoch, config)
+        scheduler.step(float(val_bleu))
+
+        # Save checkpoint
+        if not os.path.exists(checkpoints_path):
+            os.makedirs(checkpoints_path)
+        state = {
+            'epoch': epoch + 1,
+            'patience_counter': patience_counter,
+            'max_bleu': max_bleu,
+            'state_dict': model.state_dict(),
+            'optimizer': opt.state_dict(),
+            'scheduler': scheduler.state_dict()
+        }
+        torch.save(state, '{}/{}-{:03d}'.format(checkpoints_path, config["session"], epoch + 1))
+
+        print("Blue score: {}".format(val_bleu))
+        if float(val_bleu) > max_bleu:
+            max_bleu = float(val_bleu)
+            patience_counter = 0
+        else:
+            patience_counter += 1
+            if patience_counter >= self.config["patience"]:
+                break
+
+
+def evaluate(model, validate_fn, dataset_dev, vocab_src, vocab_tgt, epoch, config):
+    checkpoints_path = "{}/{}".format(config["out_dir"], config["predictions_dir"])
+    if not os.path.exists(checkpoints_path):
+        os.makedirs(checkpoints_path)
+
+    model.eval()
+    val_bleu = validate_fn(
+        model,
+        dataset_dev,
+        vocab_src,
+        vocab_tgt,
+        epoch + 1,
+        config
+    )
+    return val_bleu
 
 def main():
     config = setup_config()
     train_data, dev_data, vocab_src, vocab_tgt = load_dataset_joey(config)
-    train_src_mono, train_tgt_mono = load_mono_datasets(config, train_data)
+    train_src_mono, train_tgt_mono = load_mono_datasets(config, vocab_src, vocab_tgt)
 
     dataloader = data.make_data_iter(train_data, config["batch_size_train"], train=True)
-    src_mono_iter = iter(torchtext.data.BucketIterator(train_src_mono, batch_size=config["batch_size_train"], train=True))
-    tgt_mono_iter = iter(torchtext.data.BucketIterator(train_tgt_mono, batch_size=config["batch_size_train"], train=True))
+    src_mono_buck = torchtext.data.BucketIterator(train_src_mono, batch_size=config["batch_size_train"], train=True)
+    tgt_mono_buck = torchtext.data.BucketIterator(train_tgt_mono, batch_size=config["batch_size_train"], train=True)
 
     # dataloader = data.make_data_iter(train_data, 1, train=True)
     # src_mono_iter = iter(torchtext.data.BucketIterator(train_src_mono, batch_size=1, train=True))
@@ -116,7 +194,7 @@ def main():
     model.to(torch.device(config["device"]))
 
     init_model(model, vocab_src.stoi[config["pad"]], vocab_tgt.stoi[config["pad"]], config)
-    train(model, train_fn, validate_fn,  dataloader, src_mono_iter, tgt_mono_iter, vocab_src, vocab_tgt, config)
+    train(model, train_fn, validate_fn, dataloader, dev_data, src_mono_buck, tgt_mono_buck, vocab_src, vocab_tgt, config)
 
 if __name__ == '__main__':
     main()

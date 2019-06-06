@@ -40,6 +40,9 @@ class COAEVNMT(nn.Module):
         self.dropout = nn.Dropout(config["dropout"])
         self.config = config
 
+        self.register_buffer("prior_loc", torch.zeros([config["latent_size"]]))
+        self.register_buffer("prior_scale", torch.ones([config["latent_size"]]))
+
 #===============================================================================
 # Source to target functions, model1
 #===============================================================================
@@ -121,3 +124,141 @@ class COAEVNMT(nn.Module):
         tm_logits = self.decode_src(x, enc_output, y_mask, dec_hidden)
         lm_logits = self.model_tgt_language(y, z)
         return tm_logits, lm_logits
+
+#===============================================================================
+# Monolingual fuctions
+#===============================================================================
+
+    def sample_src(self, y, y_mask):
+        with torch.no_grad():
+            qz = self.tgt_inference(y, y_mask)
+            z = qz.sample()
+
+            enc_output, enc_final = self.encode_tgt(y, z)
+            dec_hidden = self.init_src_decoder(enc_output, enc_final, z)
+            x = self.src_decoder.sample(self.emb_src, enc_output, y_mask, dec_hidden, self.vocab_src.stoi[self.config["sos"]])
+            return x
+
+    def sample_tgt(self, x, x_mask):
+        with torch.no_grad():
+            qz = self.src_inference(x, x_mask)
+            z = qz.sample()
+
+            enc_output, enc_final = self.encode_src(x, z)
+            dec_hidden = self.init_tgt_decoder(enc_output, enc_final, z)
+            y = self.tgt_decoder.sample(self.emb_tgt, enc_output, x_mask, dec_hidden, self.vocab_tgt.stoi[self.config["sos"]])
+            return y
+
+
+#===============================================================================
+# Loss
+#===============================================================================
+    def loss_fake(self, tm_logits, lm_logits, tm_targets, lm_targets, qz, step):
+        tm_logits = tm_logits.permute(0, 2, 1)
+        tm_loss = F.cross_entropy(tm_logits, tm_targets, ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction="none")
+        tm_loss = tm_loss.sum(dim=1)
+
+        lm_logits = lm_logits.permute(0, 2, 1)
+        lm_loss = F.cross_entropy(lm_logits, lm_targets, ignore_index=self.vocab_src.stoi[self.config["pad"]], reduction="none")
+        lm_loss = lm_loss.sum(dim=1)
+
+        pz = torch.distributions.Normal(loc=self.prior_loc, scale=self.prior_scale).expand(qz.mean.size())
+        kl_loss = torch.distributions.kl.kl_divergence(qz, pz)
+        kl_loss = kl_loss.sum(dim=1)
+        if (self.config["kl_free_nats"] > 0):
+            kl_loss = torch.clamp(kl_loss, min=self.config["kl_free_nats"])
+
+        tm_log_likelihood = -tm_loss
+        lm_log_likelihood = -lm_loss
+        elbo = tm_log_likelihood + lm_log_likelihood - kl_loss
+        loss = -elbo
+        # loss = tm_loss + lm_loss + kl_loss
+        return loss.mean()
+
+    def loss(self, tm1_logits, lm1_logits, tm1_targets, lm1_targets, qz1,
+        tm2_logits, lm2_logits, tm2_targets, lm2_targets, qz2,
+        tm3_logits, lm3_logits, tm3_targets, lm3_targets, qz3,
+        tm4_logits, lm4_logits, tm4_targets, lm4_targets, qz4, step):
+
+        # Bilingual src2tgt loss
+        tm1_logits = tm1_logits.permute(0, 2, 1)
+        tm1_loss = F.cross_entropy(tm1_logits, tm1_targets, ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction="none")
+        tm1_loss = tm1_loss.sum(dim=1)
+
+        lm1_logits = lm1_logits.permute(0, 2, 1)
+        lm1_loss = F.cross_entropy(lm1_logits, lm1_targets, ignore_index=self.vocab_src.stoi[self.config["pad"]], reduction="none")
+        lm1_loss = lm1_loss.sum(dim=1)
+
+        pz1 = torch.distributions.Normal(loc=self.prior_loc, scale=self.prior_scale).expand(qz1.mean.size())
+        kl1_loss = torch.distributions.kl.kl_divergence(qz1, pz1)
+        kl1_loss = kl1_loss.sum(dim=1)
+        if (self.config["kl_free_nats"] > 0):
+            kl1_loss = torch.clamp(kl1_loss, min=self.config["kl_free_nats"])
+
+        tm1_log_likelihood = -tm1_loss
+        lm1_log_likelihood = -lm1_loss
+        elbo1 = tm1_log_likelihood + lm1_log_likelihood - kl1_loss
+        loss1 = -elbo1
+
+        # Bilingual tgt2src loss
+        tm2_logits = tm2_logits.permute(0, 2, 1)
+        tm2_loss = F.cross_entropy(tm2_logits, tm2_targets, ignore_index=self.vocab_src.stoi[self.config["pad"]], reduction="none")
+        tm2_loss = tm2_loss.sum(dim=1)
+
+        lm2_logits = lm2_logits.permute(0, 2, 1)
+        lm2_loss = F.cross_entropy(lm2_logits, lm2_targets, ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction="none")
+        lm2_loss = lm2_loss.sum(dim=1)
+
+        pz2 = torch.distributions.Normal(loc=self.prior_loc, scale=self.prior_scale).expand(qz2.mean.size())
+        kl2_loss = torch.distributions.kl.kl_divergence(qz2, pz2)
+        kl2_loss = kl2_loss.sum(dim=1)
+        if (self.config["kl_free_nats"] > 0):
+            kl2_loss = torch.clamp(kl2_loss, min=self.config["kl_free_nats"])
+
+        tm2_log_likelihood = -tm2_loss
+        lm2_log_likelihood = -lm2_loss
+        elbo2 = tm2_log_likelihood + lm2_log_likelihood - kl2_loss
+        loss2 = -elbo2
+
+        # Monolingual tgt loss
+        tm3_logits = tm3_logits.permute(0, 2, 1)
+        tm3_loss = F.cross_entropy(tm3_logits, tm3_targets, ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction="none")
+        tm3_loss = tm3_loss.sum(dim=1)
+
+        lm3_logits = lm3_logits.permute(0, 2, 1)
+        lm3_loss = F.cross_entropy(lm3_logits, lm3_targets, ignore_index=self.vocab_src.stoi[self.config["pad"]], reduction="none")
+        lm3_loss = lm3_loss.sum(dim=1)
+
+        pz3 = torch.distributions.Normal(loc=self.prior_loc, scale=self.prior_scale).expand(qz3.mean.size())
+        kl3_loss = torch.distributions.kl.kl_divergence(qz3, pz3)
+        kl3_loss = kl3_loss.sum(dim=1)
+        if (self.config["kl_free_nats"] > 0):
+            kl3_loss = torch.clamp(kl3_loss, min=self.config["kl_free_nats"])
+
+        tm3_log_likelihood = -tm3_loss
+        lm3_log_likelihood = -lm3_loss
+        elbo3 = tm3_log_likelihood + lm3_log_likelihood - kl3_loss
+        loss3 = -elbo3
+
+        # Monolingual src loss
+        tm4_logits = tm4_logits.permute(0, 2, 1)
+        tm4_loss = F.cross_entropy(tm4_logits, tm4_targets, ignore_index=self.vocab_src.stoi[self.config["pad"]], reduction="none")
+        tm4_loss = tm4_loss.sum(dim=1)
+
+        lm4_logits = lm4_logits.permute(0, 2, 1)
+        lm4_loss = F.cross_entropy(lm4_logits, lm4_targets, ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction="none")
+        lm4_loss = lm4_loss.sum(dim=1)
+
+        pz4 = torch.distributions.Normal(loc=self.prior_loc, scale=self.prior_scale).expand(qz4.mean.size())
+        kl4_loss = torch.distributions.kl.kl_divergence(qz4, pz4)
+        kl4_loss = kl4_loss.sum(dim=1)
+        if (self.config["kl_free_nats"] > 0):
+            kl4_loss = torch.clamp(kl4_loss, min=self.config["kl_free_nats"])
+
+        tm4_log_likelihood = -tm4_loss
+        lm4_log_likelihood = -lm4_loss
+        elbo4 = tm4_log_likelihood + lm4_log_likelihood - kl4_loss
+        loss4 = -elbo4
+
+        loss = loss1.mean() + loss2.mean() + loss3.mean() + loss4.mean()
+        return loss

@@ -6,7 +6,7 @@ from torch.nn.utils import clip_grad_norm_
 import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
-from utils import create_prev_x
+from utils import create_prev
 
 class Trainer():
     def __init__(self, model, train_fn, validate_fn, vocab_src, vocab_tgt, dataset_train, dataset_dev, config):
@@ -72,7 +72,7 @@ class Trainer():
                 opt.zero_grad()
 
                 x = batch.src
-                prev_x, x_mask = create_prev_x(x, self.src_sos_idx, self.src_pad_idx)
+                prev_x, x_mask = create_prev(x, self.src_sos_idx, self.src_pad_idx)
 
                 y = batch.trg
                 prev_y = batch.trg_input
