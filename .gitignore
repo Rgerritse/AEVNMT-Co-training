@@ -1,7 +1,5 @@
 __pycache__
-data/
+coaevnmt/data/
+coavnmt/output/
+coavnmt/__pycache__/
 venv/
-venv3.5/
-fairseq/
-AEVNMT-scores.txt
-output/

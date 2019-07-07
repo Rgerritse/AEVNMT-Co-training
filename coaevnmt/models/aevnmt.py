@@ -78,6 +78,10 @@ class AEVNMT(nn.Module):
         return tm_logits, lm_logits
 
     def loss(self, tm_logits, lm_logits, tm_targets, lm_targets, qz, step):
+        kl_weight = 1.0
+        if (self.config["kl_annealing_steps"] > 0 and step < self.config["kl_annealing_steps"]):
+            kl_weight *= 1.0 / self.config["kl_annealing_steps"] * step
+
         tm_logits = tm_logits.permute(0, 2, 1)
         tm_loss = F.cross_entropy(tm_logits, tm_targets, ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction="none")
         tm_loss = tm_loss.sum(dim=1)
@@ -89,7 +93,8 @@ class AEVNMT(nn.Module):
         pz = torch.distributions.Normal(loc=self.prior_loc, scale=self.prior_scale).expand(qz.mean.size())
         kl_loss = torch.distributions.kl.kl_divergence(qz, pz)
         kl_loss = kl_loss.sum(dim=1)
-        if (self.config["kl_free_nats"] > 0):
+        kl_loss *= kl_weight
+        if (self.config["kl_free_nats"] > 0 and (self.config["kl_annealing_steps"] == 0 or step >= self.config["kl_annealing_steps"])):
             kl_loss = torch.clamp(kl_loss, min=self.config["kl_free_nats"])
 
         tm_log_likelihood = -tm_loss

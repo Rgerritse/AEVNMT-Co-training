@@ -26,7 +26,7 @@ class CondNMT(nn.Module):
     def forward(self, x, x_mask, y):
         enc_output, enc_final = self.encode(x)
         dec_hidden = self.decoder.initialize(enc_output, enc_final)
-        
+
         # Decode function
         outputs = []
         max_len = y.shape[-1]
@@ -38,7 +38,8 @@ class CondNMT(nn.Module):
             outputs.append(logits)
         return torch.cat(outputs, dim=1)
 
-    def loss(self, logits, targets, reduction):
+    def loss(self, logits, targets):
         logits = logits.permute(0, 2, 1)
-        loss = F.cross_entropy(logits, targets, ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction=reduction)
-        return loss
+        loss = F.cross_entropy(logits, targets, ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction="none")
+        loss = loss.sum(dim=1)
+        return loss.mean()

@@ -10,8 +10,11 @@ class Decoder(nn.Module):
 
         self.attention = attention
 
+
         rnn_fn = rnn_creation_fn(config["rnn_type"])
-        self.rnn = rnn_fn(config["emb_size"] + 2 * config["hidden_size"], config["hidden_size"], batch_first=True)
+        rnn_dropout = 0. if config["num_dec_layers"] == 1 else config["dropout"]
+        self.rnn = rnn_fn(config["emb_size"] + 2 * config["hidden_size"], config["hidden_size"],
+            batch_first=True, dropout=rnn_dropout, num_layers=config["num_dec_layers"])
 
         if config["pass_enc_final"]:
             self.init_layer = nn.Linear(2 * config["hidden_size"], config["hidden_size"])
@@ -25,6 +28,7 @@ class Decoder(nn.Module):
         self.attention.compute_proj_keys(enc_output)
         if self.config["pass_enc_final"]:
             hidden = self.init_layer(enc_final)
+            hidden = hidden.unsqueeze(0)
             hidden = tile_rnn_hidden(hidden, self.rnn)
             return hidden
 
@@ -33,8 +37,8 @@ class Decoder(nn.Module):
             query = dec_hidden[0]
         else:
             query = dec_hidden
-        query = query.squeeze(0).unsqueeze(1)
 
+        query = query[-1].unsqueeze(1)
         context, _ = self.attention.forward(query, x_mask, enc_output)
         rnn_input = torch.cat([embed_y, context], dim=2)
 
