@@ -38,8 +38,8 @@ def load_mono_datasets(config, src_vocab, tgt_vocab):
                            include_lengths=True)
 
     mono_path = config["data_dir"] + "/" + config["mono_prefix"]
-    train_src_mono = data.MonoDataset(mono_path, ".translation.en", src_field)
-    train_tgt_mono = data.MonoDataset(mono_path, ".de", src_field)
+    train_src_mono = data.MonoDataset(mono_path, ".en", src_field)
+    train_tgt_mono = data.MonoDataset(mono_path, ".tr", src_field)
 
     src_field.vocab = src_vocab
     trg_field.vocab = tgt_vocab
@@ -85,17 +85,21 @@ def clean_sentences(hypotheses, references, config):
 
     return clean_hyps, clean_refs
 
-
 def save_hypotheses(hypotheses, epoch, config):
-    file = '{}/{}/{}-{:03d}.{}'.format(config["out_dir"], config["predictions_dir"], config["session"], epoch, config["tgt"])
+    file = '{}/predictions/{}-{:03d}.{}'.format(config["out_dir"], config["session"], epoch, config["tgt"])
     with open(file, 'a') as the_file:
        for sent in hypotheses:
            the_file.write(sent + '\n')
 
 def compute_bleu(hypotheses, references, epoch, config):
     bleu = sacrebleu.raw_corpus_bleu(hypotheses, [references]).score
-    file = '{}/{}-scores.txt'.format(config["out_dir"], config["session"])
-    with open(file, 'a') as f_score:
+    # file = '{}/{}/{}-{:03d}.{}'.format(config["out_dir"], config["predictions_dir"], config["session"], epoch, config["tgt"])
+    # ref = '{}/valid.detok.tr'.format(config["data_dir"])
+    # process = subprocess.run(['./scripts/evaluate.sh', file, ref], stdout=subprocess.PIPE)
+    # bleu = process.stdout.strip()
+
+    scores = '{}/{}-scores.txt'.format(config["out_dir"], config["session"])
+    with open(scores, 'a') as f_score:
         f_score.write("Epoch: {}, Bleu {}\n".format(epoch, bleu))
     return bleu
 

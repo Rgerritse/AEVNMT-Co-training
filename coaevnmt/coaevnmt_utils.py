@@ -28,8 +28,15 @@ def create_model(vocab_src, vocab_tgt, config):
         config)
     return model
 
+# def train_step_bilingual(model, prev_x, x, x_mask, prev_y, y, y_mask):
+#     return loss
+
+def train_fn_bilingual(model, prev_x, x, x_mask, prev_y, y, y_mask, src_pad_idx, tgt_pad_idx, step):
+    
+    return loss
+
 def train_step(model, prev_x, x, x_mask, prev_y, y, y_mask,
-    prev_y_mono, y_mono, y_mono_mask, prev_x_mono, x_mono, x_mono_mask, src_pad_idx, tgt_pad_idx, step):
+    prev_y_mono, y_mono, y_mono_mask, prev_x_mono, x_mono, x_mono_mask, share_latent_var, src_pad_idx, tgt_pad_idx, step):
     # Bilingual src2tgt model1
     qz1 = model.src_inference(prev_x, x_mask)
     z1 = qz1.rsample()
@@ -41,25 +48,27 @@ def train_step(model, prev_x, x, x_mask, prev_y, y, y_mask,
     tm2_logits, lm2_logits = model.forward_tgt2src(prev_y, y_mask, prev_x, z2)
 
     # Monolingual tgt
-    sampled_x = model.sample_src(prev_y_mono, y_mono_mask)
+    sampled_x, qz3 = model.sample_src(prev_y_mono, y_mono_mask)
     sampled_x = torch.from_numpy(sampled_x).to(x.device)
     sampled_x_mask = (sampled_x != src_pad_idx).unsqueeze(-2)
 
-    qz3 = model.src_inference(sampled_x, sampled_x_mask)
+    if not share_latent_var:
+        qz3 = model.src_inference(sampled_x, sampled_x_mask)
     z3 = qz3.rsample()
     tm3_logits, lm3_logits = model.forward_src2tgt(sampled_x, sampled_x_mask, prev_y_mono, z3)
 
     # Monolingual src
-    sampled_y = model.sample_tgt(prev_x_mono, x_mono_mask)
+    sampled_y, qz4 = model.sample_tgt(prev_x_mono, x_mono_mask)
     sampled_y = torch.from_numpy(sampled_y).to(y.device)
     sampled_y_mask = (sampled_y != tgt_pad_idx).unsqueeze(-2)
 
-    qz4 = model.tgt_inference(sampled_y, sampled_y_mask)
+    if not share_latent_var:
+        qz4 = model.tgt_inference(sampled_y, sampled_y_mask)
     z4 = qz4.rsample()
     tm4_logits, lm4_logits = model.forward_tgt2src(sampled_y, sampled_y_mask, prev_x_mono, z4)
 
-    loss = model.loss(tm1_logits, lm1_logits, y, x, qz1,
-        tm2_logits, lm2_logits, x, y, qz2,
+    loss = model.loss(tm1_logits, lm1_logits, qz1,
+        tm2_logits, lm2_logits, qz2, y, x,
         tm3_logits, lm3_logits, y_mono, sampled_x, qz3,
         tm4_logits, lm4_logits, x_mono, sampled_y, qz4, step)
 

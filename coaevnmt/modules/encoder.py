@@ -7,7 +7,9 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
 
         rnn_fn = rnn_creation_fn(config["rnn_type"])
-        self.rnn = rnn_fn(config["hidden_size"], config["hidden_size"], batch_first=True, bidirectional=True)
+        rnn_dropout = 0. if config["num_enc_layers"] == 1 else config["dropout"]
+        self.rnn = rnn_fn(config["hidden_size"], config["hidden_size"], batch_first=True,
+            bidirectional=True, dropout=rnn_dropout, num_layers=config["num_enc_layers"])
         self.config = config
 
     def forward(self, x, hidden=None):

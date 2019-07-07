@@ -1,11 +1,14 @@
 {
-    "attention": "luong",
-    "batch_size_train": 40,
+    "attention": "bahdanau",
+    "batch_size_train": 60,
     "beam_width": 10,
     "rnn_type": "lstm",
     "dropout": 0.5,
     "emb_size": 256,
     "hidden_size": 256,
+    "kl_free_nats": 5,
+    "kl_annealing_steps": 0,
+    "latent_size": 128,
     "learning_rate": 0.002,
     "length_penalty": 1.0,
     "lr_reduce_cooldown": 2,
@@ -14,11 +17,11 @@
     "max_gradient_norm": 4.0,
     "max_len": 50,
     "min_lr": 1e-05,
-    "model_type": "cond_nmt",
-    "num_epochs": 50,
+    "model_type": "aevnmt",
+    "num_epochs": 75,
     "pass_enc_final": true,
     "patience": 10,
     "share_vocab": true,
     "subword_token": "@@",
-    "word_dropout": 0.0
+    "word_dropout": 0.3
 }

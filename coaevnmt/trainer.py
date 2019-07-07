@@ -32,7 +32,7 @@ class Trainer():
 
     def train_model(self):
         print("Training...")
-        checkpoints_path = "{}/{}".format(self.config["out_dir"], self.config["checkpoints_dir"])
+        checkpoints_path = "{}/checkpoints".format(self.config["out_dir"])
 
         dataloader = data.make_data_iter(self.dataset_train, self.config["batch_size_train"], train=True)
         parameters = filter(lambda p: p.requires_grad, self.model.parameters())
@@ -107,7 +107,7 @@ class Trainer():
                     loss.item())
                 )
 
-            val_bleu = self.evaluate(epoch)
+                val_bleu = self.evaluate(epoch)
             scheduler.step(float(val_bleu))
 
             # Save checkpoint
@@ -133,7 +133,7 @@ class Trainer():
                     break
 
     def evaluate(self, epoch):
-        checkpoints_path = "{}/{}".format(self.config["out_dir"], self.config["predictions_dir"])
+        checkpoints_path = "{}/checkpoints".format(self.config["out_dir"])
         if not os.path.exists(checkpoints_path):
             os.makedirs(checkpoints_path)
 

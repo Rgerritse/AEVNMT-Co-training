@@ -137,7 +137,7 @@ class COAEVNMT(nn.Module):
             enc_output, enc_final = self.encode_tgt(y, z)
             dec_hidden = self.init_src_decoder(enc_output, enc_final, z)
             x = self.src_decoder.sample(self.emb_src, enc_output, y_mask, dec_hidden, self.vocab_src.stoi[self.config["sos"]])
-            return x
+            return x, qz
 
     def sample_tgt(self, x, x_mask):
         with torch.no_grad():
@@ -147,7 +147,7 @@ class COAEVNMT(nn.Module):
             enc_output, enc_final = self.encode_src(x, z)
             dec_hidden = self.init_tgt_decoder(enc_output, enc_final, z)
             y = self.tgt_decoder.sample(self.emb_tgt, enc_output, x_mask, dec_hidden, self.vocab_tgt.stoi[self.config["sos"]])
-            return y
+            return y, qz
 
 
 #===============================================================================
@@ -175,24 +175,29 @@ class COAEVNMT(nn.Module):
         # loss = tm_loss + lm_loss + kl_loss
         return loss.mean()
 
-    def loss(self, tm1_logits, lm1_logits, tm1_targets, lm1_targets, qz1,
-        tm2_logits, lm2_logits, tm2_targets, lm2_targets, qz2,
+    def loss(self, tm1_logits, lm1_logits, qz1,
+        tm2_logits, lm2_logits, qz2, y_targets, x_targets,
         tm3_logits, lm3_logits, tm3_targets, lm3_targets, qz3,
         tm4_logits, lm4_logits, tm4_targets, lm4_targets, qz4, step):
 
+        kl_weight = 1.0
+        if (self.config["kl_annealing_steps"] > 0 and step < self.config["kl_annealing_steps"]):
+            kl_weight *= 1.0 / self.config["kl_annealing_steps"] * step
+
         # Bilingual src2tgt loss
         tm1_logits = tm1_logits.permute(0, 2, 1)
-        tm1_loss = F.cross_entropy(tm1_logits, tm1_targets, ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction="none")
+        tm1_loss = F.cross_entropy(tm1_logits, y_targets, ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction="none")
         tm1_loss = tm1_loss.sum(dim=1)
 
         lm1_logits = lm1_logits.permute(0, 2, 1)
-        lm1_loss = F.cross_entropy(lm1_logits, lm1_targets, ignore_index=self.vocab_src.stoi[self.config["pad"]], reduction="none")
+        lm1_loss = F.cross_entropy(lm1_logits, x_targets, ignore_index=self.vocab_src.stoi[self.config["pad"]], reduction="none")
         lm1_loss = lm1_loss.sum(dim=1)
 
         pz1 = torch.distributions.Normal(loc=self.prior_loc, scale=self.prior_scale).expand(qz1.mean.size())
         kl1_loss = torch.distributions.kl.kl_divergence(qz1, pz1)
         kl1_loss = kl1_loss.sum(dim=1)
-        if (self.config["kl_free_nats"] > 0):
+        kl1_loss *= kl_weight
+        if (self.config["kl_free_nats"] > 0 and (self.config["kl_annealing_steps"] == 0 or step >=self.config["kl_annealing_steps"])):
             kl1_loss = torch.clamp(kl1_loss, min=self.config["kl_free_nats"])
 
         tm1_log_likelihood = -tm1_loss
@@ -202,17 +207,18 @@ class COAEVNMT(nn.Module):
 
         # Bilingual tgt2src loss
         tm2_logits = tm2_logits.permute(0, 2, 1)
-        tm2_loss = F.cross_entropy(tm2_logits, tm2_targets, ignore_index=self.vocab_src.stoi[self.config["pad"]], reduction="none")
+        tm2_loss = F.cross_entropy(tm2_logits, x_targets, ignore_index=self.vocab_src.stoi[self.config["pad"]], reduction="none")
         tm2_loss = tm2_loss.sum(dim=1)
 
         lm2_logits = lm2_logits.permute(0, 2, 1)
-        lm2_loss = F.cross_entropy(lm2_logits, lm2_targets, ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction="none")
+        lm2_loss = F.cross_entropy(lm2_logits, y_targets, ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction="none")
         lm2_loss = lm2_loss.sum(dim=1)
 
         pz2 = torch.distributions.Normal(loc=self.prior_loc, scale=self.prior_scale).expand(qz2.mean.size())
         kl2_loss = torch.distributions.kl.kl_divergence(qz2, pz2)
         kl2_loss = kl2_loss.sum(dim=1)
-        if (self.config["kl_free_nats"] > 0):
+        kl2_loss *= kl_weight
+        if (self.config["kl_free_nats"] > 0 and (self.config["kl_annealing_steps"] == 0 or step >=self.config["kl_annealing_steps"])):
             kl2_loss = torch.clamp(kl2_loss, min=self.config["kl_free_nats"])
 
         tm2_log_likelihood = -tm2_loss
@@ -232,7 +238,8 @@ class COAEVNMT(nn.Module):
         pz3 = torch.distributions.Normal(loc=self.prior_loc, scale=self.prior_scale).expand(qz3.mean.size())
         kl3_loss = torch.distributions.kl.kl_divergence(qz3, pz3)
         kl3_loss = kl3_loss.sum(dim=1)
-        if (self.config["kl_free_nats"] > 0):
+        kl3_loss *= kl_weight
+        if (self.config["kl_free_nats"] > 0 and (self.config["kl_annealing_steps"] == 0 or step >=self.config["kl_annealing_steps"])):
             kl3_loss = torch.clamp(kl3_loss, min=self.config["kl_free_nats"])
 
         tm3_log_likelihood = -tm3_loss
@@ -252,7 +259,8 @@ class COAEVNMT(nn.Module):
         pz4 = torch.distributions.Normal(loc=self.prior_loc, scale=self.prior_scale).expand(qz4.mean.size())
         kl4_loss = torch.distributions.kl.kl_divergence(qz4, pz4)
         kl4_loss = kl4_loss.sum(dim=1)
-        if (self.config["kl_free_nats"] > 0):
+        kl4_loss *= kl_weight
+        if (self.config["kl_free_nats"] > 0 and (self.config["kl_annealing_steps"] == 0 or step >=self.config["kl_annealing_steps"])):
             kl4_loss = torch.clamp(kl4_loss, min=self.config["kl_free_nats"])
 
         tm4_log_likelihood = -tm4_loss
