@@ -7,7 +7,7 @@ import torch
 from trainer import Trainer
 from utils import load_dataset_joey, create_attention
 from modules.utils import init_model
-from configuration import setup_config, setup_config_new
+from configuration import setup_config
 
 def create_model(vocab_src, vocab_tgt, config):
     if config["model_type"] == "cond_nmt":
@@ -24,10 +24,6 @@ def create_model(vocab_src, vocab_tgt, config):
     return model, train_fn, validate_fn
 
 def main():
-    # config = setup_config_new()
-    # print(config)
-    # asd
-    #
     config = setup_config()
 
     train_data, dev_data, vocab_src, vocab_tgt = load_dataset_joey(config)
