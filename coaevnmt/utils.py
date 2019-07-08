@@ -1,4 +1,4 @@
-import re
+import os, re
 from joeynmt import data
 from joeynmt.attention import BahdanauAttention, LuongAttention
 from joeynmt.constants import UNK_TOKEN, EOS_TOKEN, BOS_TOKEN, PAD_TOKEN
@@ -86,7 +86,10 @@ def clean_sentences(hypotheses, references, config):
     return clean_hyps, clean_refs
 
 def save_hypotheses(hypotheses, epoch, config):
-    file = '{}/predictions/{}-{:03d}.{}'.format(config["out_dir"], config["session"], epoch, config["tgt"])
+    hypotheses_path = '{}/{}/predictions'.format(config["out_dir"], config["session"])
+    if not os.path.exists(hypotheses_path):
+        os.makedirs(hypotheses_path)
+    file = '{}/{}-{:03d}.{}'.format(hypotheses_path, config["session"], epoch, config["tgt"])
     with open(file, 'a') as the_file:
        for sent in hypotheses:
            the_file.write(sent + '\n')
@@ -98,7 +101,7 @@ def compute_bleu(hypotheses, references, epoch, config):
     # process = subprocess.run(['./scripts/evaluate.sh', file, ref], stdout=subprocess.PIPE)
     # bleu = process.stdout.strip()
 
-    scores = '{}/{}-scores.txt'.format(config["out_dir"], config["session"])
+    scores = '{}/{}/bleu-scores.txt'.format(config["out_dir"], config["session"])
     with open(scores, 'a') as f_score:
         f_score.write("Epoch: {}, Bleu {}\n".format(epoch, bleu))
     return bleu

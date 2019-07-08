@@ -87,7 +87,7 @@ def setup_config_new():
         json_config = get_json_config(cmd_line_config["config_file"])
         config.update(json_config)
     config.update(cmd_line_config)
-    
+
     print_config(config)
     return config
 
@@ -96,14 +96,14 @@ def add_arguments(parser):
 
     # Data
     parser.add_argument("--src", type=str, default="en", help="Source suffix, e.g., en")
-    parser.add_argument("--tgt", type=str, default="tr", help="Target suffix, e.g., tr") # Should be changed for real dataset
-    parser.add_argument("--data_dir", type=str, default="data/en-tr", help="Path to data directory")
-    parser.add_argument("--train_prefix", type=str, default="bilingual/train_100000.en-tr", help="Train prefix, expect files with src/tgt suffixes.") # Should be changed for real dataset
+    parser.add_argument("--tgt", type=str, default="de", help="Target suffix, e.g., tr") # Should be changed for real dataset
+    parser.add_argument("--data_dir", type=str, default="data/multi30k", help="Path to data directory")
+    parser.add_argument("--train_prefix", type=str, default="training", help="Train prefix, expect files with src/tgt suffixes.") # Should be changed for real dataset
     parser.add_argument("--dev_prefix", type=str, default="dev", help="Dev prefix, expect files with src/tgt suffixes.")
     parser.add_argument("--test_prefix", type=str, default="test", help="Test prefix, expect files with src/tgt suffixes.")
 
     # Vocab
-    parser.add_argument("--vocab_prefix", type=str, default="aevnmt_vocab", help="Vocab prefix, expect files with src/tgt suffixes.")
+    parser.add_argument("--vocab_prefix", type=str, default="vocab", help="Vocab prefix, expect files with src/tgt suffixes.")
     parser.add_argument("--sos", type=str, default="<s>", help="Start-of-sentence symbol.")
     parser.add_argument("--eos", type=str, default="</s>", help="End-of-sentence symbol.")
     parser.add_argument("--pad", type=str, default="<pad>", help="Padding symbol.")

@@ -24,11 +24,11 @@ def create_model(vocab_src, vocab_tgt, config):
     return model, train_fn, validate_fn
 
 def main():
-    config = setup_config_new()
+    # config = setup_config_new()
     # print(config)
     # asd
     #
-    # config = setup_config()
+    config = setup_config()
 
     train_data, dev_data, vocab_src, vocab_tgt = load_dataset_joey(config)
 
