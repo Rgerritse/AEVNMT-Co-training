@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import os, re
+=======
+import re
+>>>>>>> ba2dff999b1b6c4257d484faa3421e41e3b5364c
 from joeynmt import data
 from joeynmt.attention import BahdanauAttention, LuongAttention
 from joeynmt.constants import UNK_TOKEN, EOS_TOKEN, BOS_TOKEN, PAD_TOKEN
