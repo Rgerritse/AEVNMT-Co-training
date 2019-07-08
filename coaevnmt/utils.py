@@ -100,7 +100,6 @@ def compute_bleu(hypotheses, references, epoch, config):
     # ref = '{}/valid.detok.tr'.format(config["data_dir"])
     # process = subprocess.run(['./scripts/evaluate.sh', file, ref], stdout=subprocess.PIPE)
     # bleu = process.stdout.strip()
-
     scores = '{}/{}/bleu-scores.txt'.format(config["out_dir"], config["session"])
     with open(scores, 'a') as f_score:
         f_score.write("Epoch: {}, Bleu {}\n".format(epoch, bleu))
