@@ -39,7 +39,7 @@ def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
             dec_hidden = model.decoder.initialize(enc_output, enc_hidden)
 
             raw_hypothesis = beam_search(model.decoder, model.emb_tgt,
-                model.logits_layer, enc_output, dec_hidden, x_mask, len(vocab_tgt),
+                model.generate, enc_output, dec_hidden, x_mask, len(vocab_tgt),
                 vocab_tgt.stoi[config["sos"]], vocab_tgt.stoi[config["eos"]],
                 vocab_tgt.stoi[config["pad"]], config)
 

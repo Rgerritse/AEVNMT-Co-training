@@ -14,7 +14,10 @@ class CondNMT(nn.Module):
         self.emb_tgt = nn.Embedding(len(vocab_tgt), config["emb_size"], padding_idx=vocab_tgt.stoi[config["pad"]])
 
         self.dropout = nn.Dropout(config["dropout"])
-        self.logits_layer = nn.Linear(config["hidden_size"], len(vocab_tgt), bias=False)
+
+        if not config["tied_embeddings"]:
+            self.logits_matrix = nn.Parameter(torch.randn(tgt_vocab_size, decoder.hidden_size))
+            # self.logits_layer = nn.Linear(config["hidden_size"], len(vocab_tgt), bias=False)
 
         self.config = config
 
@@ -22,6 +25,14 @@ class CondNMT(nn.Module):
         embed_x = self.dropout(self.emb_src(x))
         enc_output, enc_final = self.encoder(embed_x)
         return enc_output, enc_final
+
+    def generate(self, pre_output):
+        W = self.emb_tgt.weight if self.config["tied_embeddings"] else self.logits_matrix
+        return F.linear(pre_output, W)
+        # if self.config["tied_embeddings"]:
+        #     return self.emb_tgt(pre_output)
+        # else:
+        #     return self.logits_layer(pre_output)
 
     def forward(self, x, x_mask, y):
         enc_output, enc_final = self.encode(x)
@@ -34,7 +45,8 @@ class CondNMT(nn.Module):
             prev_y = y[:, t].unsqueeze(1).long()
             embed_y = self.dropout(self.emb_tgt(prev_y))
             pre_output, dec_hidden = self.decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden)
-            logits = self.logits_layer(pre_output)
+            # logits = self.logits_layer(pre_output)
+            logits = self.generate(pre_output)
             outputs.append(logits)
         return torch.cat(outputs, dim=1)
 
