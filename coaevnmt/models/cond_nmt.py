@@ -17,8 +17,6 @@ class CondNMT(nn.Module):
 
         if not config["tied_embeddings"]:
             self.logits_matrix = nn.Parameter(torch.randn(tgt_vocab_size, decoder.hidden_size))
-            # self.logits_layer = nn.Linear(config["hidden_size"], len(vocab_tgt), bias=False)
-
         self.config = config
 
     def encode(self, x):
@@ -29,10 +27,6 @@ class CondNMT(nn.Module):
     def generate(self, pre_output):
         W = self.emb_tgt.weight if self.config["tied_embeddings"] else self.logits_matrix
         return F.linear(pre_output, W)
-        # if self.config["tied_embeddings"]:
-        #     return self.emb_tgt(pre_output)
-        # else:
-        #     return self.logits_layer(pre_output)
 
     def forward(self, x, x_mask, y):
         enc_output, enc_final = self.encode(x)

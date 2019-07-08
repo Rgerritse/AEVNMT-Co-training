@@ -20,27 +20,32 @@ def get_default_config():
         "unk": (str, "<unk>", False, "Unknown symbol."),
 
         # Model
-        "model_type": (str, "nmt", False, "nmt|aevnmt"),
+        "model_type": (str, None, False, "con_nmt|aevnmt|coaevnmt"),
         "emb_init_std": (float, 0.01, False, "Standard deviation of embeddings initialization"),
         "emb_size": (int, 512, False, "Dimensionality of word embeddings"),
         "hidden_size": (int, 512, False, "Dimensionality of hidden units"),
-        "kl_free_nats": (float, 5.0, False, "Free bits value"),
-        "dropout": (float, 0.3, False, "Dropout"),
+        "kl_free_nats": (float, 10.0, False, "Free bits value"),
+        "kl_annealing_steps": (int, 0, False, "Number of steps to anneal kl loss"),
+        "dropout": (float, 0.5, False, "Dropout"),
         "word_dropout": (float, 0.3, False, "Word Dropout"),
         "attention": (str, "bahdanau", False, "Attention type: bahdanau|luong"),
-        "rnn_type": (str, "gru", False, "Rnn type: gru|lstm"),
+        "rnn_type": (str, "lstm", False, "Rnn type: gru|lstm"),
         "max_len": (int, 50, False, "Maximum sequence length"),
         "num_dec_layers": (int, 2, False, "Number of decoder RNN layers"),
         "num_enc_layers": (int, 1, False, "Number of encoder RNN layers"),
+        "lr_reduce_cooldown": (int, 2, False, "Number of epochs to wait before resuming normal operation after lr has been reduced"),
+        "lr_reduce_factor": (float, 0.5, False, "Factor by which the learning rate will be reduced"),
+        "lr_reduce_patience": (int, 6, False, "Number of epochs with no improvement after which learning rate will be reduced"),
+        "min_lr": (float, 5e-07, False, "Minimal learning rate"),
         "tied_embeddings": (bool, True, False, "Tie embeddings layer to output layer"),
         "pass_enc_final": (bool,  True, False, "Whether to pass encoder's hidden state to decoder when using an attention based model."),
         "share_vocab": (bool, False, False, "Whether to share vocabulary between source and target."),
 
         # Training
-        "learning_rate": (float, 0.0003, False, "Learning rate"),
+        "learning_rate": (float, 0.0005, False, "Learning rate"),
         "batch_size_train": (int, 64, False, "Number of samples per batch during training"),
         "max_gradient_norm": (float, 4.0, False, "Max norm of the gradients"),
-        "latent_size": (int, 32, False, "Size of the latent variable"),
+        "latent_size": (int, 256, False, "Size of the latent variable"),
 
         # Evaluation
         "batch_size_eval": (int, 64, False, "Number of samples per batch during evaluation"),
