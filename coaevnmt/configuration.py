@@ -6,14 +6,14 @@ def get_default_config():
         # Data parameters
         "src": (str, None, False, "Source suffix, e.g., en"),
         "tgt": (str, None, False, "Target suffix, e.g., tr"),
-        "data_dir": (str, "data/multi30k", False, "Path to data directory"),
-        "train_prefix": (str, "training", False, "Train prefix, expect files with src/tgt suffixes."), # Should be changed for real dataset
+        "data_dir": (str, "data/en-tr", False, "Path to data directory"),
+        "train_prefix": (str, "bilingual/train_100000.en-tr", False, "Train prefix, expect files with src/tgt suffixes."), # Should be changed for real dataset
         "dev_prefix": (str, "dev", False, "Dev prefix, expect files with src/tgt suffixes."),
         "test_prefix": (str, "test", False, "Test prefix, expect files with src/tgt suffixes."),
         "out_dir": (str, "output", False, "Path to output directory"),
 
         # Vocab
-        "vocab_prefix": (str, "vocab", False, "Vocab prefix, expect files with src/tgt suffixes."),
+        "vocab_prefix": (str, "aevnmt_vocab", False, "Vocab prefix, expect files with src/tgt suffixes."),
         "sos": (str, "<s>", False, "Start-of-sentence symbol."),
         "eos": (str, "</s>", False, "End-of-sentence symbol."),
         "pad": (str, "<pad>", False, "Padding symbol."),
