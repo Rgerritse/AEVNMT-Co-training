@@ -97,7 +97,7 @@ class AEVNMT(nn.Module):
     def loss(self, tm_logits, lm_logits, tm_targets, lm_targets, qz, step):
         kl_weight = 1.0
         if (self.config["kl_annealing_steps"] > 0 and step < self.config["kl_annealing_steps"]):
-            kl_weight *= 1.0 / self.config["kl_annealing_steps"] * step
+            kl_weight *= 0.001 + (1.0-0.001) / self.config["kl_annealing_steps"] * step
 
         tm_logits = tm_logits.permute(0, 2, 1)
         tm_loss = F.cross_entropy(tm_logits, tm_targets, ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction="none")

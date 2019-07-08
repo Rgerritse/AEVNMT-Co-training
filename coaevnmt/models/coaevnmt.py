@@ -40,6 +40,10 @@ class COAEVNMT(nn.Module):
         self.dropout = nn.Dropout(config["dropout"])
         self.config = config
 
+        if not config["tied_embeddings"]:
+            self.tm_logits_matrix = nn.Parameter(torch.randn(len(vocab_tgt), config["hidden_size"]))
+            self.lm_logits_matrix = nn.Parameter(torch.randn(len(vocab_src), config["hidden_size"]))
+
         self.register_buffer("prior_loc", torch.zeros([config["latent_size"]]))
         self.register_buffer("prior_scale", torch.ones([config["latent_size"]]))
 
@@ -182,7 +186,7 @@ class COAEVNMT(nn.Module):
 
         kl_weight = 1.0
         if (self.config["kl_annealing_steps"] > 0 and step < self.config["kl_annealing_steps"]):
-            kl_weight *= 1.0 / self.config["kl_annealing_steps"] * step
+            kl_weight *= 0.001 + (1.0-0.001) / self.config["kl_annealing_steps"] * step
 
         # Bilingual src2tgt loss
         tm1_logits = tm1_logits.permute(0, 2, 1)
