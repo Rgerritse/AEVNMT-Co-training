@@ -32,6 +32,7 @@ def get_default_config():
         "max_len": (int, 50, False, "Maximum sequence length"),
         "num_dec_layers": (int, 2, False, "Number of decoder RNN layers"),
         "num_enc_layers": (int, 1, False, "Number of encoder RNN layers"),
+        "tied_embeddings": (bool, True, False, "Tie embeddings layer to output layer"),
         "pass_enc_final": (bool,  True, False, "Whether to pass encoder's hidden state to decoder when using an attention based model."),
         "share_vocab": (bool, False, False, "Whether to share vocabulary between source and target."),
 
@@ -70,6 +71,9 @@ def get_cmd_line_config(default_config):
     cmd_line_config = {}
     for option, value in flags.items():
         if not value is None:
+            option_type, _, _, _ = default_config[option]
+            if option_type == bool and isinstance(value, str):
+                value = value.lower() == "true"
             cmd_line_config[option] = value
     return cmd_line_config
 
@@ -90,3 +94,9 @@ def setup_config():
 
     print_config(config)
     return config
+
+def print_config(config):
+    print("Configuration: ")
+    for i in sorted(config):
+        print("  {}: {}".format(i, config[i]))
+    print("\n")
