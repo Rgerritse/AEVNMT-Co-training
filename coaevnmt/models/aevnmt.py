@@ -22,6 +22,10 @@ class AEVNMT(nn.Module):
         self.dec_init_layer = nn.Linear(config["latent_size"], config["hidden_size"])
         self.lm_init_layer = nn.Linear(config["latent_size"], config["hidden_size"])
 
+        if not config["tied_embeddings"]:
+            self.tm_logits_matrix = nn.Parameter(torch.randn(len(vocab_tgt), config["hidden_size"]))
+            self.lm_logits_matrix = nn.Parameter(torch.randn(len(vocab_src), config["hidden_size"]))
+
         self.dropout = nn.Dropout(config["dropout"])
         self.config = config
 
@@ -45,34 +49,47 @@ class AEVNMT(nn.Module):
         logits = self.decoder(embed_y, enc_output, x_mask, dec_hidden)
         return logits
 
-    def model_language(self, x, z):
-        embed_x = self.dropout(self.emb_src(x))
-        hidden = torch.tanh(self.lm_init_layer(z))
-        hidden = tile_rnn_hidden(hidden, self.language_model.rnn)
-        logits = self.language_model(embed_x, hidden)
-        return logits
-
     def init_decoder(self, encoder_outputs, encoder_final, z):
         self.decoder.initialize(encoder_outputs, encoder_final)
         hidden = torch.tanh(self.dec_init_layer(z))
         hidden = tile_rnn_hidden(hidden, self.decoder.rnn)
         return hidden
 
+    def generate_tm(self, pre_output):
+        W = self.emb_tgt.weight if self.config["tied_embeddings"] else self.tm_logits_matrix
+        return F.linear(pre_output, W)
+
+    def generate_lm(self, pre_output):
+        W = self.emb_src.weight if self.config["tied_embeddings"] else self.lm_logits_matrix
+        return F.linear(pre_output, W)
+
+    def model_language(self, x, z):
+        embed_x = self.dropout(self.emb_src(x))
+        hidden = torch.tanh(self.lm_init_layer(z))
+        hidden = tile_rnn_hidden(hidden, self.language_model.rnn)
+
+        outputs = []
+        max_len = embed_x.shape[1]
+        for t in range(max_len):
+            prev_x = embed_x[:, t:t+1, :]
+            pre_output, hidden = self.language_model.forward_step(prev_x, hidden)
+            logits = self.generate_lm(pre_output)
+            outputs.append(logits)
+        return torch.cat(outputs, dim=1)
+
     def forward(self, x, x_mask, y, z):
         enc_output, enc_final = self.encode(x, z)
         dec_hidden = self.init_decoder(enc_output, enc_final, z)
 
-        outputs = []
+        tm_outputs = []
         max_len = y.shape[-1]
         for t in range(max_len):
             prev_y = y[:, t].unsqueeze(1).long()
             embed_y = self.dropout(self.emb_tgt(prev_y))
             pre_output, dec_hidden = self.decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden)
-            logits = self.decoder.logits_layer(pre_output)
-            outputs.append(logits)
-        tm_logits = torch.cat(outputs, dim=1)
-
-        # tm_logits = self.decode(y, enc_output, x_mask, dec_hidden)
+            logits = self.generate_tm(pre_output)
+            tm_outputs.append(logits)
+        tm_logits = torch.cat(tm_outputs, dim=1)
         lm_logits = self.model_language(x, z)
 
         return tm_logits, lm_logits

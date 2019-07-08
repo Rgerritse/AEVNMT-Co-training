@@ -21,7 +21,9 @@
     "num_epochs": 75,
     "pass_enc_final": true,
     "patience": 10,
+    "src": "en",
     "share_vocab": true,
     "subword_token": "@@",
+    "tgt": "de",
     "word_dropout": 0.3
 }
