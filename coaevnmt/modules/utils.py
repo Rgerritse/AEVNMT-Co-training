@@ -18,7 +18,6 @@ def tile_rnn_hidden(hidden, rnn):
         hidden = (hidden, hidden)
     return hidden
 
-
 def xavier_uniform_n_(w, gain=1., n=4):
     """
     From: https://github.com/joeynmt/joeynmt/blob/master/joeynmt/initialization.py

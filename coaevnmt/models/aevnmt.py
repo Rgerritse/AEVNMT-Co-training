@@ -94,6 +94,23 @@ class AEVNMT(nn.Module):
 
         return tm_logits, lm_logits
 
+    def sample(enc_output, y_mask, dec_hidden):
+        batch_size = y_mask.size(0)
+        prev = y_mask.new_full(size=[batch_size, 1], fill_value=self.vocab_tgt.stoi[self.config["sos"],
+            dtype=torch.long)
+
+        output = []
+        for t in range(self.config["max_len"]):
+            embed = self.emb_tgt(prev)
+            pre_output, dec_hidden = self.decoder.forward_step(embed, enc_output, mask, dec_hidden)
+            logits = self.generate_tm(pre_output)
+            categorical = Categorical(logits=logits)
+            next_word = categorical.sample()
+            output.append(next_word.squeeze(1).cpu().numpy())
+            prev = next_word
+            stacked_output = np.stack(output, axis=1)  # batch, time
+        return stacked_output
+
     def loss(self, tm_logits, lm_logits, tm_targets, lm_targets, qz, step):
         kl_weight = 1.0
         if (self.config["kl_annealing_steps"] > 0 and step < self.config["kl_annealing_steps"]):

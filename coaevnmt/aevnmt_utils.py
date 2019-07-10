@@ -27,7 +27,7 @@ def train_step(model, prev_x, x, x_mask, prev_y, y, step):
     loss = model.loss(tm_logits, lm_logits, y, x, qz, step)
     return loss
 
-def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
+def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config, direction=None):
     model.eval()
     with torch.no_grad():
         model_hypotheses = []
@@ -38,9 +38,13 @@ def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
             cuda = False if config["device"] == "cpu" else True
             batch = Batch(batch, vocab_src.stoi[config["pad"]], use_cuda=cuda)
 
-            x = batch.src
+            if direction == None, direction == "xy":
+                x = batch.src
+                y = batch.trg
+            elif direction == "yx":
+                x = batch.trg
+                y = batch.src
             prev_x, x_mask = create_prev(x, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
-            y = batch.trg
 
             qz = model.inference(prev_x, x_mask)
             z = qz.mean
@@ -57,6 +61,6 @@ def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
             references += vocab_tgt.arrays_to_sentences(y)
 
         model_hypotheses, references = clean_sentences(model_hypotheses, references, config)
-        save_hypotheses(model_hypotheses, epoch, config)
+        save_hypotheses(model_hypotheses, epoch, config, direction)
         bleu = compute_bleu(model_hypotheses, references, epoch, config)
         return bleu

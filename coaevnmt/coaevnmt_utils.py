@@ -28,12 +28,40 @@ def create_model(vocab_src, vocab_tgt, config):
         config)
     return model
 
-# def train_step_bilingual(model, prev_x, x, x_mask, prev_y, y, y_mask):
-#     return loss
 
-def train_fn_bilingual(model, prev_x, x, x_mask, prev_y, y, y_mask, src_pad_idx, tgt_pad_idx, step):
-    
+def bi_train_fn(model_xy, model_yx, prev_x, x, x_mask, prev_y, y, y_mask, step):
+    qz_xy = model_xy.inference(prev_x, x_mask)
+    qz_yx = model_yx.inference(prev_y, y_mask)
+
+    z_xy = qz_xy.rsample()
+    z_yx = qz_yx.rsample()
+
+    tm_logits_xy, lm_logits_xy = model_xy(prev_x, x_mask, prev_y, z_xy)
+    tm_logits_yx, lm_logits_yx = model_yx(prev_y, y_mask, prev_x, z_yx)
+
+    loss_xy = model_xy.loss(tm_logits_xy, lm_logits_xy, y, x, qz_xy, step)
+    loss_yx = model_yx.loss(tm_logits_yx, lm_logits_yx, x, y, qz_yx, step)
+
+    loss = loss_xy + loss_yx
     return loss
+
+def mono_train_fn(model_xy, model_yx, prev_y, y_mask, y, src_sos_idx, src_pad_idx, step):
+    with torch.no_grad():
+        qz_y = model_yx.inference(prev_y, y_mask)
+        z_y = qz_y.rsample()
+
+        enc_output, enc_final = model_yx.encode(prev_y, z_y)
+        dec_hidden = model_yx.init_decoder(enc_output, enc_final, z)
+        x = model_yx.sample(enc_output, y_mask, dec_hidden)
+
+        x = torch.from_numpy(x).to(model_yx.device)
+        prev_x, x_mask = create_prev(x, src_pad_idx, src_pad_idx)
+
+    qz_x = model_xy.inference(prev_x, x_mask)
+    z_x = qz_x.rsample()
+    tm_logits, lm_logits = model_xy(prev_x, x_mask, prev_y, z_x)
+
+    loss = model_xy.loss(tm_logits, lm_logits, y, x, qz_x, step)
 
 def train_step(model, prev_x, x, x_mask, prev_y, y, y_mask,
     prev_y_mono, y_mono, y_mono_mask, prev_x_mono, x_mono, x_mono_mask, share_latent_var, src_pad_idx, tgt_pad_idx, step):

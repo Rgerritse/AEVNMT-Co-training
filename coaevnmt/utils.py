@@ -85,11 +85,14 @@ def clean_sentences(hypotheses, references, config):
 
     return clean_hyps, clean_refs
 
-def save_hypotheses(hypotheses, epoch, config):
+def save_hypotheses(hypotheses, epoch, config, direction=None):
     hypotheses_path = '{}/{}/predictions'.format(config["out_dir"], config["session"])
     if not os.path.exists(hypotheses_path):
         os.makedirs(hypotheses_path)
-    file = '{}/{}-{:03d}.{}'.format(hypotheses_path, config["session"], epoch, config["tgt"])
+    file = '{}/{}-{:03d}'.format(hypotheses_path, config["session"], epoch)
+    if not direction is None:
+        file += "-" + direction
+    file += "." + config["tgt"]
     with open(file, 'a') as the_file:
        for sent in hypotheses:
            the_file.write(sent + '\n')

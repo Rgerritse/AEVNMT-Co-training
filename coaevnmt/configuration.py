@@ -6,14 +6,17 @@ def get_default_config():
         # Data parameters
         "src": (str, None, False, "Source suffix, e.g., en"),
         "tgt": (str, None, False, "Target suffix, e.g., tr"),
-        "data_dir": (str, "data/en-tr", False, "Path to data directory"),
-        "train_prefix": (str, "bilingual/train_100000.en-tr", False, "Train prefix, expect files with src/tgt suffixes."), # Should be changed for real dataset
+        # "data_dir": (str, "data/en-tr", False, "Path to data directory"),
+        # "train_prefix": (str, "bilingual/train_100000.en-tr", False, "Train prefix, expect files with src/tgt suffixes."), # Should be changed for real dataset
+        "data_dir": (str, "data/multi30k", False, "Path to data directory"),
+        "train_prefix": (str, "training", False, "Train prefix, expect files with src/tgt suffixes."), # Should be changed for real dataset
         "dev_prefix": (str, "dev", False, "Dev prefix, expect files with src/tgt suffixes."),
         "test_prefix": (str, "test", False, "Test prefix, expect files with src/tgt suffixes."),
         "out_dir": (str, "output", False, "Path to output directory"),
 
         # Vocab
-        "vocab_prefix": (str, "aevnmt_vocab", False, "Vocab prefix, expect files with src/tgt suffixes."),
+        # "vocab_prefix": (str, "aevnmt_vocab", False, "Vocab prefix, expect files with src/tgt suffixes."),
+        "vocab_prefix": (str, "vocab", False, "Vocab prefix, expect files with src/tgt suffixes."),
         "sos": (str, "<s>", False, "Start-of-sentence symbol."),
         "eos": (str, "</s>", False, "End-of-sentence symbol."),
         "pad": (str, "<pad>", False, "Padding symbol."),
@@ -46,6 +49,7 @@ def get_default_config():
         "batch_size_train": (int, 64, False, "Number of samples per batch during training"),
         "max_gradient_norm": (float, 4.0, False, "Max norm of the gradients"),
         "latent_size": (int, 256, False, "Size of the latent variable"),
+        "bilingual_warmup": (int, 10, False, "Number of epochs to train using only bilingual data"),    
 
         # Evaluation
         "batch_size_eval": (int, 64, False, "Number of samples per batch during evaluation"),

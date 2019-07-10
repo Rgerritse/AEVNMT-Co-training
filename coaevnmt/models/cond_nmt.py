@@ -16,7 +16,7 @@ class CondNMT(nn.Module):
         self.dropout = nn.Dropout(config["dropout"])
 
         if not config["tied_embeddings"]:
-            self.logits_matrix = nn.Parameter(torch.randn(tgt_vocab_size, decoder.hidden_size))
+            self.logits_matrix = nn.Parameter(torch.randn(len(vocab_tgt), config["hidden_size"]))
         self.config = config
 
     def encode(self, x):
