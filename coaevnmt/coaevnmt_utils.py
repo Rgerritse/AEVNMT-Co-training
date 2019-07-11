@@ -51,10 +51,10 @@ def mono_train_fn(model_xy, model_yx, prev_y, y_mask, y, src_sos_idx, src_pad_id
         z_y = qz_y.rsample()
 
         enc_output, enc_final = model_yx.encode(prev_y, z_y)
-        dec_hidden = model_yx.init_decoder(enc_output, enc_final, z)
+        dec_hidden = model_yx.init_decoder(enc_output, enc_final, z_y)
         x = model_yx.sample(enc_output, y_mask, dec_hidden)
 
-        x = torch.from_numpy(x).to(model_yx.device)
+        x = torch.from_numpy(x).to(enc_output.device)
         prev_x, x_mask = create_prev(x, src_pad_idx, src_pad_idx)
 
     qz_x = model_xy.inference(prev_x, x_mask)
@@ -62,6 +62,7 @@ def mono_train_fn(model_xy, model_yx, prev_y, y_mask, y, src_sos_idx, src_pad_id
     tm_logits, lm_logits = model_xy(prev_x, x_mask, prev_y, z_x)
 
     loss = model_xy.loss(tm_logits, lm_logits, y, x, qz_x, step)
+    return loss
 
 def train_step(model, prev_x, x, x_mask, prev_y, y, y_mask,
     prev_y_mono, y_mono, y_mono_mask, prev_x_mono, x_mono, x_mono_mask, share_latent_var, src_pad_idx, tgt_pad_idx, step):

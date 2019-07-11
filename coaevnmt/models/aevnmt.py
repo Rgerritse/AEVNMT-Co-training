@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.normal import Normal
+from torch.distributions.categorical import Categorical
+import numpy as np
 from modules.utils import tile_rnn_hidden
 
 class AEVNMT(nn.Module):
@@ -94,15 +96,15 @@ class AEVNMT(nn.Module):
 
         return tm_logits, lm_logits
 
-    def sample(enc_output, y_mask, dec_hidden):
+    def sample(self, enc_output, y_mask, dec_hidden):
         batch_size = y_mask.size(0)
-        prev = y_mask.new_full(size=[batch_size, 1], fill_value=self.vocab_tgt.stoi[self.config["sos"],
+        prev = y_mask.new_full(size=[batch_size, 1], fill_value=self.vocab_tgt.stoi[self.config["sos"]],
             dtype=torch.long)
 
         output = []
         for t in range(self.config["max_len"]):
             embed = self.emb_tgt(prev)
-            pre_output, dec_hidden = self.decoder.forward_step(embed, enc_output, mask, dec_hidden)
+            pre_output, dec_hidden = self.decoder.forward_step(embed, enc_output, y_mask, dec_hidden)
             logits = self.generate_tm(pre_output)
             categorical = Categorical(logits=logits)
             next_word = categorical.sample()

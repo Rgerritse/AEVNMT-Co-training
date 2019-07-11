@@ -38,8 +38,8 @@ def load_mono_datasets(config, src_vocab, tgt_vocab):
                            include_lengths=True)
 
     mono_path = config["data_dir"] + "/" + config["mono_prefix"]
-    train_src_mono = data.MonoDataset(mono_path, ".en", src_field)
-    train_tgt_mono = data.MonoDataset(mono_path, ".tr", src_field)
+    train_src_mono = data.MonoDataset(mono_path, ".{}".format(config["src"]), src_field)
+    train_tgt_mono = data.MonoDataset(mono_path, ".{}".format(config["tgt"]), trg_field)
 
     src_field.vocab = src_vocab
     trg_field.vocab = tgt_vocab

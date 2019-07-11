@@ -16,14 +16,16 @@
     "lr_reduce_patience": 2,
     "max_gradient_norm": 4.0,
     "max_len": 50,
-    "min_lr": 1e-05,
+    "min_lr": 5e-07,
     "model_type": "aevnmt",
-    "num_epochs": 75,
-    "pass_enc_final": true,
+    "num_dec_layers": 2,
+    "num_enc_layers": 1,
+    "num_epochs": 50,
     "patience": 10,
     "src": "en",
-    "share_vocab": true,
+    "share_vocab": false,
     "subword_token": "@@",
+    "tied_embeddings": true,
     "tgt": "de",
-    "word_dropout": 0.3
+    "word_dropout": 0.0
 }

@@ -16,14 +16,15 @@ def create_models(vocab_src, vocab_tgt, config):
         model_xy = aevnmt_utils.create_model(vocab_src, vocab_tgt, config)
         model_yx = aevnmt_utils.create_model(vocab_tgt, vocab_src, config)
         bi_train_fn = coaevnmt_utils.bi_train_fn
+        mono_train_fn = coaevnmt_utils.mono_train_fn
         validate_fn = aevnmt_utils.validate
     else:
         raise ValueError("Unknown model type: {}".format(config["model_type"]))
     print("Model xy: ", model_xy)
     print("Model yx: ", model_yx)
-    return model_xy, model_yx, bi_train_fn, validate_fn
+    return model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn
 
-def optimzer_step(parameters, optimizer, max_gradient_norm):
+def optimizer_step(parameters, optimizer, max_gradient_norm):
     if max_gradient_norm > 0:
         clip_grad_norm_(parameters, max_gradient_norm)
 
@@ -32,7 +33,7 @@ def optimzer_step(parameters, optimizer, max_gradient_norm):
 
 def create_optimizer(model, config):
     parameters = filter(lambda p: p.requires_grad, model.parameters())
-    opt_ = torch.optim.Adam(parameters, lr=config["learning_rate"])
+    opt = torch.optim.Adam(parameters, lr=config["learning_rate"])
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         opt,
         mode="max",
@@ -67,7 +68,7 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, dataloade
     patience_counter = 0
     max_bleu = 0.0
 
-    checkpoints_path = "{}/{}".format(config["out_dir"], config["checkpoints_dir"])
+    checkpoints_path = "{}/{}/checkpoints".format(config["out_dir"], config["session"])
     if os.path.exists(checkpoints_path):
         checkpoints = [cp for cp in sorted(os.listdir(checkpoints_path)) if '-'.join(cp.split('-')[:-1]) == config["session"]]
         if checkpoints:
@@ -124,8 +125,15 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, dataloade
             optimizer_step(model_xy.parameters(), opt_xy, config["max_gradient_norm"])
             optimizer_step(model_yx.parameters(), opt_yx, config["max_gradient_norm"])
 
+            print_string = "Epoch: {:03d}/{:03d}, Batch {:05d}/{:05d}, Bi-Loss: {:.2f}".format(
+                epoch + 1,
+                config["num_epochs"],
+                step + 1,
+                len(dataloader),
+                bi_loss.item())
+
             # Monolingual loss
-            if epoch > config["bilingual_warmup"]:
+            if epoch >= config["bilingual_warmup"]:
                 # Y data
                 try:
                     y_mono_batch = next(tgt_mono_iter)
@@ -136,7 +144,7 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, dataloade
                 y_mono = y_mono_batch.src
 
                 prev_y_mono, y_mono_mask = create_prev(y_mono, vocab_tgt.stoi[config["sos"]], vocab_tgt.stoi[config["pad"]])
-                mono_y_loss = mono_train_fn(model_xy, model_yx, prev_y_mono, y_mono_mask, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]], step)
+                mono_y_loss = mono_train_fn(model_xy, model_yx, prev_y_mono, y_mono_mask, y_mono, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]], step)
                 mono_y_loss.backward()
 
                 optimizer_step(model_xy.parameters(), opt_xy, config["max_gradient_norm"])
@@ -151,20 +159,13 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, dataloade
                 x_mono = x_mono_batch.src
 
                 prev_x_mono, x_mono_mask = create_prev(x_mono, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
-                mono_x_loss = mono_train_fn(model_yx, model_xy, prev_x_mono, x_mono_mask, vocab_tgt.stoi[config["sos"]], vocab_tgt.stoi[config["pad"]], step)
+                mono_x_loss = mono_train_fn(model_yx, model_xy, prev_x_mono, x_mono_mask, x_mono, vocab_tgt.stoi[config["sos"]], vocab_tgt.stoi[config["pad"]], step)
                 mono_x_loss.backward()
 
                 optimizer_step(model_yx.parameters(), opt_yx, config["max_gradient_norm"])
 
-            print("Epoch: {:03d}/{:03d}, Batch {:05d}/{:05d}, Bi-Loss: {:.2f}, Y-Loss: {:.2f}, X-Loss: {:.2f}".format(
-                epoch + 1,
-                config["num_epochs"],
-                step + 1,
-                len(dataloader),
-                bi_loss.item(),
-                mono_y_loss.item(),
-                mono_x_loss.item())
-            )
+                print_string += ", Y-Loss: {:.2f}, X-Loss: {:.2f}".format(mono_y_loss.item(), mono_x_loss.item())
+            print(print_string)
 
         val_bleu_xy = evaluate(model_xy, validate_fn, dataset_dev, vocab_src, vocab_tgt, epoch, config, direction="xy")
         val_bleu_yx = evaluate(model_yx, validate_fn, dataset_dev, vocab_tgt, vocab_src, epoch, config, direction="yx")
@@ -198,7 +199,7 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, dataloade
                 break
 
 def evaluate(model, validate_fn, dataset_dev, vocab_src, vocab_tgt, epoch, config, direction="xy"):
-    checkpoints_path = "{}/{}".format(config["out_dir"], config["predictions_dir"])
+    checkpoints_path = "{}/{}/checkpoints".format(config["out_dir"], config["session"])
     if not os.path.exists(checkpoints_path):
         os.makedirs(checkpoints_path)
 
@@ -232,3 +233,6 @@ def main():
 
     train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, dataloader,
         dev_data, src_mono_buck, tgt_mono_buck, vocab_src, vocab_tgt, config)
+
+if __name__ == '__main__':
+    main()

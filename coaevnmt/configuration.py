@@ -11,6 +11,7 @@ def get_default_config():
         "data_dir": (str, "data/multi30k", False, "Path to data directory"),
         "train_prefix": (str, "training", False, "Train prefix, expect files with src/tgt suffixes."), # Should be changed for real dataset
         "dev_prefix": (str, "dev", False, "Dev prefix, expect files with src/tgt suffixes."),
+        "mono_prefix": (str, "training.mono", False, "Monolingual files prefix, expect files with src/tgt suffixes."),
         "test_prefix": (str, "test", False, "Test prefix, expect files with src/tgt suffixes."),
         "out_dir": (str, "output", False, "Path to output directory"),
 
@@ -49,7 +50,7 @@ def get_default_config():
         "batch_size_train": (int, 64, False, "Number of samples per batch during training"),
         "max_gradient_norm": (float, 4.0, False, "Max norm of the gradients"),
         "latent_size": (int, 256, False, "Size of the latent variable"),
-        "bilingual_warmup": (int, 10, False, "Number of epochs to train using only bilingual data"),    
+        "bilingual_warmup": (int, 10, False, "Number of epochs to train using only bilingual data"),
 
         # Evaluation
         "batch_size_eval": (int, 64, False, "Number of samples per batch during evaluation"),

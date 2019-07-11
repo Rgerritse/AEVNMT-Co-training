@@ -38,7 +38,7 @@ def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config, direction=
             cuda = False if config["device"] == "cpu" else True
             batch = Batch(batch, vocab_src.stoi[config["pad"]], use_cuda=cuda)
 
-            if direction == None, direction == "xy":
+            if direction == None or direction == "xy":
                 x = batch.src
                 y = batch.trg
             elif direction == "yx":
