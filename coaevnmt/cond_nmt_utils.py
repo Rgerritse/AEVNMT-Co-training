@@ -15,9 +15,9 @@ def create_model(vocab_src, vocab_tgt, config):
     model = CondNMT(vocab_src, vocab_tgt, encoder, decoder, config)
     return model
 
-def train_step(model, prev_x, x, x_mask, prev_y, y, step):
-    logits = model(prev_x, x_mask, prev_y)
-    loss = model.loss(logits, y)
+def train_step(model, x_in, x_noisy_in, x_out, x_len, x_mask, y_in, y_noisy_in, y_out, step):
+    logits = model(x_noisy_in, x_len, x_mask, y_in)
+    loss = model.loss(logits, y_out)
     return loss
 
 def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
@@ -31,11 +31,12 @@ def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
             cuda = False if config["device"] == "cpu" else True
             batch = Batch(batch, vocab_src.stoi[config["pad"]], use_cuda=cuda)
 
-            x = batch.src
-            prev_x, x_mask = create_prev(x, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
-            y = batch.trg
+            x_out = batch.src
+            x_len = batch.src_lengths
+            x_in, x_mask = create_prev(x_out, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
+            y_out = batch.trg
 
-            enc_output, enc_hidden = model.encode(prev_x)
+            enc_output, enc_hidden = model.encode(x_in, x_len)
             dec_hidden = model.decoder.initialize(enc_output, enc_hidden)
 
             raw_hypothesis = beam_search(model.decoder, model.emb_tgt,
@@ -44,7 +45,7 @@ def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
                 vocab_tgt.stoi[config["pad"]], config)
 
             model_hypotheses += vocab_tgt.arrays_to_sentences(raw_hypothesis)
-            references += vocab_tgt.arrays_to_sentences(y)
+            references += vocab_tgt.arrays_to_sentences(y_out)
 
         model_hypotheses, references = clean_sentences(model_hypotheses, references, config)
         save_hypotheses(model_hypotheses, epoch, config)

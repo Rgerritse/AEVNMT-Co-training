@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+
 from .utils import rnn_creation_fn
 
 class Encoder(nn.Module):
@@ -12,8 +14,8 @@ class Encoder(nn.Module):
             bidirectional=True, dropout=rnn_dropout, num_layers=config["num_enc_layers"])
         self.config = config
 
-    def forward(self, x, hidden=None):
-        output, hidden = self.rnn(x, hidden) # Maybe packed sequences
+    def forward(self, x, x_len, hidden=None):
+        output, hidden = self.rnn(x, hidden)
 
         if self.config["rnn_type"] == "lstm":
             hidden = hidden[0]

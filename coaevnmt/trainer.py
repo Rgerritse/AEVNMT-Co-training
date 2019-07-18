@@ -71,27 +71,28 @@ class Trainer():
 
                 opt.zero_grad()
 
-                x = batch.src
-                prev_x, x_mask = create_prev(x, self.src_sos_idx, self.src_pad_idx)
+                x_out = batch.src
+                x_len = batch.src_lengths
+                x_in, x_mask = create_prev(x_out, self.src_sos_idx, self.src_pad_idx)
 
-                y = batch.trg
-                prev_y = batch.trg_input
+                y_out = batch.trg
+                y_in = batch.trg_input
 
-                if self.config["word_dropout"] > 0:
-                    probs_prev_x = torch.zeros(prev_x.shape).uniform_(0, 1).to(prev_x.device)
-                    prev_x = torch.where(
-                        (probs_prev_x > self.config["word_dropout"]) | (prev_x == self.src_pad_idx) | (prev_x == self.src_eos_idx),
-                        prev_x,
-                        torch.empty(prev_x.shape, dtype=torch.int64).fill_(self.src_unk_idx).to(prev_x.device)
-                    )
-                    probs_prev_y = torch.zeros(prev_y.shape).uniform_(0, 1).to(prev_y.device)
-                    prev_y = torch.where(
-                        (probs_prev_y > self.config["word_dropout"]) | (prev_y == self.tgt_pad_idx) | (prev_y == self.tgt_eos_idx),
-                        prev_y,
-                        torch.empty(prev_y.shape, dtype=torch.int64).fill_(self.tgt_unk_idx).to(prev_y.device)
-                    )
+                # Word_dropout
+                probs_x_in = torch.zeros(x_in.shape).uniform_(0, 1).to(x_in.device)
+                x_noisy_in = torch.where(
+                    (probs_x_in > self.config["word_dropout"]) | (x_in == self.src_pad_idx) | (x_in == self.src_eos_idx),
+                    x_in,
+                    torch.empty(x_in.shape, dtype=torch.int64).fill_(self.src_unk_idx).to(x_in.device)
+                )
+                probs_y_in = torch.zeros(y_in.shape).uniform_(0, 1).to(y_in.device)
+                y_noisy_in = torch.where(
+                    (probs_y_in > self.config["word_dropout"]) | (y_in == self.tgt_pad_idx) | (y_in == self.tgt_eos_idx),
+                    y_in,
+                    torch.empty(y_in.shape, dtype=torch.int64).fill_(self.tgt_unk_idx).to(y_in.device)
+                )
 
-                loss = self.train_fn(self.model, prev_x, x, x_mask, prev_y, y, step)
+                loss = self.train_fn(self.model, x_in, x_noisy_in, x_out, x_len, x_mask, y_in, y_noisy_in, y_out, step)
                 loss.backward()
 
                 if self.config["max_gradient_norm"] > 0:

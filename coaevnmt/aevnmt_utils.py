@@ -19,12 +19,12 @@ def create_model(vocab_src, vocab_tgt, config):
     model = AEVNMT(vocab_src, vocab_tgt, inference_model, encoder, decoder, language_model, config)
     return model
 
-def train_step(model, prev_x, x, x_mask, prev_y, y, step):
-    qz = model.inference(prev_x, x_mask)
+def train_step(model, x_in, x_noisy_in, x_out, x_mask, y_in, y_noisy_in, y_out, step):
+    qz = model.inference(x_in, x_mask)
     z = qz.rsample()
 
-    tm_logits, lm_logits = model(prev_x, x_mask, prev_y, z)
-    loss = model.loss(tm_logits, lm_logits, y, x, qz, step)
+    tm_logits, lm_logits = model(x_noisy_in, x_mask, y_in, z)
+    loss = model.loss(tm_logits, lm_logits, y_out, x_out, qz, step)
     return loss
 
 def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config, direction=None):
@@ -39,17 +39,17 @@ def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config, direction=
             batch = Batch(batch, vocab_src.stoi[config["pad"]], use_cuda=cuda)
 
             if direction == None or direction == "xy":
-                x = batch.src
-                y = batch.trg
+                x_out = batch.src
+                y_out = batch.trg
             elif direction == "yx":
-                x = batch.trg
-                y = batch.src
-            prev_x, x_mask = create_prev(x, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
+                x_out = batch.trg
+                y_out = batch.src
+            x_in, x_mask = create_prev(x_out, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
 
-            qz = model.inference(prev_x, x_mask)
+            qz = model.inference(x_in, x_mask)
             z = qz.mean
 
-            enc_output, enc_hidden = model.encode(prev_x, z)
+            enc_output, enc_hidden = model.encode(x_in, z)
             dec_hidden = model.init_decoder(enc_output, enc_hidden, z)
 
             raw_hypothesis = beam_search(model.decoder, model.emb_tgt,

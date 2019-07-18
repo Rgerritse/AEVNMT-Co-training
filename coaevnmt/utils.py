@@ -70,6 +70,20 @@ def create_attention(config):
     else:
         raise ValueError("Unknown attention: {}".format(config["attention"]))
 
+def create_optimizer(parameters, config):
+    optimizer = torch.optim.Adam(parameters, lr=config["learning_rate"])
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="max",
+        factor=config["lr_reduce_factor"],
+        patience=config["lr_reduce_patience"],
+        threshold=1e-2,
+        threshold_mode="abs",
+        cooldown=config["lr_reduce_cooldown"],
+        min_lr=config["min_lr"]
+    )
+    return optimizer, scheduler
+
 def clean_sentences(hypotheses, references, config):
     subword_token = config["subword_token"]
 

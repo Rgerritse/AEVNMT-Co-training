@@ -21,7 +21,6 @@ class Decoder(nn.Module):
 
         self.dropout = nn.Dropout(config["dropout"])
         self.pre_output_layer = nn.Linear(3 * config["hidden_size"] + config["emb_size"], config["hidden_size"])
-        self.logits_layer = nn.Linear(config["hidden_size"], vocab_tgt_size, bias=False)
         self.config = config
 
     def initialize(self, enc_output, enc_final):
@@ -49,15 +48,15 @@ class Decoder(nn.Module):
         pre_output = self.pre_output_layer(pre_output)
         return pre_output, dec_hidden
 
-    def forward(self, embed_y, enc_output, x_mask, dec_hidden):
-        outputs = []
-        max_len = embed_y.shape[1]
-        for t in range(max_len):
-            prev_y = embed_y[:, t:t+1, :]
-            pre_output, dec_hidden = self.forward_step(prev_y, enc_output, x_mask, dec_hidden)
-            logits = self.logits_layer(pre_output)
-            outputs.append(logits)
-        return torch.cat(outputs, dim=1)
+    # def forward(self, embed_y, enc_output, x_mask, dec_hidden):
+    #     outputs = []
+    #     max_len = embed_y.shape[1]
+    #     for t in range(max_len):
+    #         prev_y = embed_y[:, t:t+1, :]
+    #         pre_output, dec_hidden = self.forward_step(prev_y, enc_output, x_mask, dec_hidden)
+    #         logits = self.logits_layer(pre_output)
+    #         outputs.append(logits)
+    #     return torch.cat(outputs, dim=1)
 
     def sample(self, emb_fn, enc_output, mask, dec_hidden, sos_idx):
         batch_size = mask.size(0)
@@ -68,7 +67,7 @@ class Decoder(nn.Module):
         for t in range(self.config["max_len"]):
              embed = emb_fn(prev)
              pre_output, dec_hidden = self.forward_step(embed, enc_output, mask, dec_hidden)
-             logits = self.logits_layer(pre_output)
+             # logits = self.logits_layer(pre_output) # wrong layer, use embedding matrix
              categorical = Categorical(logits=logits)
              next_word = categorical.sample()
              output.append(next_word.squeeze(1).cpu().numpy())

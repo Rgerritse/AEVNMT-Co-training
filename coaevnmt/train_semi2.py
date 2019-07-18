@@ -4,12 +4,12 @@ from joeynmt import data
 from joeynmt.batch import Batch
 
 from configuration import setup_config
-from utils import load_dataset_joey, load_mono_datasets
+from utils import load_dataset_joey, load_mono_datasets, create_prev
+from torch.nn.utils import clip_grad_norm_
+from modules.utils import init_model
 import aevnmt_utils as aevnmt_utils
 import coaevnmt_utils as coaevnmt_utils
-from modules.utils import init_model
-from utils import create_prev
-from torch.nn.utils import clip_grad_norm_
+
 
 def create_models(vocab_src, vocab_tgt, config):
     if config["model_type"] == "coaevnmt":
@@ -26,13 +26,13 @@ def create_models(vocab_src, vocab_tgt, config):
 
 def optimizer_step(parameters, optimizer, max_gradient_norm):
     if max_gradient_norm > 0:
-        clip_grad_norm_(parameters, max_gradient_norm)
+        clip_grad_norm_(parameters, max_gradient_norm, norm_type=float("inf"))
 
     optimizer.step()
     optimizer.zero_grad()
 
 def create_optimizer(model, config):
-    parameters = filter(lambda p: p.requires_grad, model.parameters())
+    parameters = filter(model.parameters())
     opt = torch.optim.Adam(parameters, lr=config["learning_rate"])
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         opt,
@@ -167,8 +167,8 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, dataloade
                 print_string += ", Y-Loss: {:.2f}, X-Loss: {:.2f}".format(mono_y_loss.item(), mono_x_loss.item())
             print(print_string)
 
-        val_bleu_xy = evaluate(model_xy, validate_fn, dataset_dev, vocab_src, vocab_tgt, epoch, config, direction="xy")
-        val_bleu_yx = evaluate(model_yx, validate_fn, dataset_dev, vocab_tgt, vocab_src, epoch, config, direction="yx")
+        val_bleu_xy = evaluate(model_xy, validate_fn, dev_data, vocab_src, vocab_tgt, epoch, config, direction="xy")
+        val_bleu_yx = evaluate(model_yx, validate_fn, dev_data, vocab_tgt, vocab_src, epoch, config, direction="yx")
 
         sched_xy.step(float(val_bleu_xy))
         sched_yx.step(float(val_bleu_yx))
@@ -181,17 +181,17 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, dataloade
             'patience_counter': patience_counter,
             'max_bleu': max_bleu,
             'state_dict_xy': model_xy.state_dict(),
-            'state_dict_xy': model_xy.state_dict(),
+            'state_dict_yx': model_yx.state_dict(),
             'optimizer_xy': opt_xy.state_dict(),
             'optimizer_yx': opt_yx.state_dict(),
-            'scheduler_xy': scheduler_xy.state_dict(),
-            'scheduler_yx': scheduler_yx.state_dict()
+            'scheduler_xy': sched_xy.state_dict(),
+            'scheduler_yx': sched_yx.state_dict()
         }
         torch.save(state, '{}/{}-{:03d}'.format(checkpoints_path, config["session"], epoch + 1))
 
-        print("Blue scores: {}, {}".format(val_bleu_xy, val_bleu_yx))
+        print("Blue scores: {}-{}: {}, {}-{}: {}".format(config["src"], config["tgt"], val_bleu_xy, config["tgt"], config["src"], val_bleu_yx))
         if float(val_bleu_xy * val_bleu_yx) > max_bleu:
-            max_bleu = float(val_bleu)
+            max_bleu = float(val_bleu_xy * val_bleu_yx)
             patience_counter = 0
         else:
             patience_counter += 1
