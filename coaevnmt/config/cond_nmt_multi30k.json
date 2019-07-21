@@ -12,7 +12,7 @@
     "lr_reduce_factor": 0.5,
     "lr_reduce_patience": 2,
     "max_gradient_norm": 4.0,
-    "max_len": 100,
+    "max_len": 50,
     "min_lr": 1e-05,
     "model_type": "cond_nmt",
     "num_dec_layers": 2,
@@ -23,7 +23,7 @@
     "src": "en",
     "share_vocab": false,
     "subword_token": "@@",
-    "tied_embeddings": true,
+    "tied_embeddings": false,
     "tgt": "de",
     "word_dropout": 0.0
 }

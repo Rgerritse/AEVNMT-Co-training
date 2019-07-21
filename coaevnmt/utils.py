@@ -122,9 +122,6 @@ def compute_bleu(hypotheses, references, epoch, config):
         f_score.write("Epoch: {}, Bleu {}\n".format(epoch, bleu))
     return bleu
 
-
-
-
     # file_name = '{}/{}/{}-{:03d}.raw.{}'.format(config["out_dir"], config["predictions_dir"], config["session"], epoch, config["tgt"])
     # with open(file_name, 'a') as the_file:
     #    for sent in hypotheses:
