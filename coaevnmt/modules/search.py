@@ -41,7 +41,7 @@ def greedy(decoder, emb_tgt, logits_layer, enc_output, dec_hidden, x_mask, sos_i
     stacked_output = np.stack(output, axis=1)  # batch, time
     return stacked_output
 
-def beam_search(decoder, emb_tgt, logits_layer, enc_output, dec_hidden, x_mask, tgt_vocab_size, sos_idx, eos_idx, pad_idx, config):
+def beam_search(decoder, emb_tgt, generate, enc_output, dec_hidden, x_mask, tgt_vocab_size, sos_idx, eos_idx, pad_idx, config):
     n_best = 1
     decoder.eval()
     with torch.no_grad():
@@ -92,7 +92,7 @@ def beam_search(decoder, emb_tgt, logits_layer, enc_output, dec_hidden, x_mask, 
             prev_y = alive_seq[:, -1].view(-1, 1)
             embed_y = emb_tgt(prev_y)
             pre_output, dec_hidden = decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden)
-            logits = logits_layer(pre_output)
+            logits = generate(pre_output)
             log_probs = F.log_softmax(logits, dim=-1).squeeze(1)
 
             # multiply probs by the beam probability (=add logprobs)

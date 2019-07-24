@@ -16,13 +16,13 @@ def create_model(vocab_src, vocab_tgt, config):
     return model
 
 def train_step(model, x_in, x_noisy_in, x_out, x_len, x_mask, y_in, y_noisy_in, y_out, step):
-    logits = model(x_noisy_in, x_mask, y_in)
-    loss = model.loss(logits, y_out, reduction="mean")
+    logits = model(x_noisy_in, x_mask, x_len, y_in)
+    loss = model.loss(logits, y_out)
     return loss
 
 
-# def train_step(model, prev_x, x, x_mask, prev_y, y, step):
-#     logits = model(prev_x, x_mask, prev_y)
+# def train_step(model, x_in, x, x_mask, prev_y, y, step):
+#     logits = model(x_in, x_mask, prev_y)
 #     loss = model.loss(logits, y, reduction="mean")
 #     return loss
 
@@ -69,24 +69,24 @@ def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
             cuda = False if config["device"] == "cpu" else True
             batch = Batch(batch, vocab_src.stoi[config["pad"]], use_cuda=cuda)
 
-            x = batch.src
+            x_out = batch.src
             x_len = batch.src_lengths
-            prev_x, x_mask = create_prev(x, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
-            y = batch.trg
+            x_in, x_mask = create_prev(x_out, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
+            y_out = batch.trg
 
 
 
 
-            enc_output, enc_hidden = model.encode(prev_x)
+            enc_output, enc_hidden = model.encode(x_in)
             dec_hidden = model.decoder.initialize(enc_output, enc_hidden)
 
             raw_hypothesis = beam_search(model.decoder, model.emb_tgt,
-                model.logits_layer, enc_output, dec_hidden, x_mask, len(vocab_tgt),
+                model.generate, enc_output, dec_hidden, x_mask, len(vocab_tgt),
                 vocab_tgt.stoi[config["sos"]], vocab_tgt.stoi[config["eos"]],
                 vocab_tgt.stoi[config["pad"]], config)
 
             model_hypotheses += vocab_tgt.arrays_to_sentences(raw_hypothesis)
-            references += vocab_tgt.arrays_to_sentences(y)
+            references += vocab_tgt.arrays_to_sentences(y_out)
 
         model_hypotheses, references = clean_sentences(model_hypotheses, references, config)
         save_hypotheses(model_hypotheses, epoch, config)

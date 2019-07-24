@@ -44,7 +44,7 @@ def train(model, train_fn, validate_fn, dataloader, dev_data, vocab_src, vocab_t
 
     checkpoints_path = "{}/{}/checkpoints".format(config["out_dir"], config["session"])
     if os.path.exists(checkpoints_path):
-        checkpoints = [cp for cp in sorted(os.listdir(checkpoints_path)) if '-'.join(cp.split('-')[:-1]) == config["session"]]
+        checkpoints = [cp for cp in sorted(os.listdir(checkpoints_path)) if cp == config["session"]]
         if checkpoints:
             state = torch.load('{}/{}'.format(checkpoints_path, checkpoints[-1]))
             saved_epoch = state['epoch']

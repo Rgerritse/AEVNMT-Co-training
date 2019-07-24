@@ -15,7 +15,7 @@
     "max_len": 100,
     "min_lr": 5e-07,
     "model_type": "cond_nmt",
-    "num_dec_layers": 2,
+    "num_dec_layers": 1,
     "num_enc_layers": 1,
     "num_epochs": 30,
     "pass_enc_final": true,

@@ -15,15 +15,15 @@
     "max_len": 50,
     "min_lr": 1e-05,
     "model_type": "cond_nmt",
-    "num_dec_layers": 2,
+    "num_dec_layers": 1,
     "num_enc_layers": 1,
-    "num_epochs": 100,
+    "num_epochs": 30,
     "pass_enc_final": true,
     "patience": 10,
     "src": "en",
     "share_vocab": false,
     "subword_token": "@@",
-    "tied_embeddings": false,
+    "tied_embeddings": true,
     "tgt": "de",
     "word_dropout": 0.0
 }

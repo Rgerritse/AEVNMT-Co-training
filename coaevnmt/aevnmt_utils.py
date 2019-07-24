@@ -19,11 +19,11 @@ def create_model(vocab_src, vocab_tgt, config):
     model = AEVNMT(vocab_src, vocab_tgt, inference_model, encoder, decoder, language_model, config)
     return model
 
-def train_step(model, x_in, x_noisy_in, x_out, x_mask, y_in, y_noisy_in, y_out, step):
+def train_step(model, x_in, x_noisy_in, x_out, x_len, x_mask, y_in, y_noisy_in, y_out, step):
     qz = model.inference(x_in, x_mask)
     z = qz.rsample()
 
-    tm_logits, lm_logits = model(x_noisy_in, x_mask, y_in, z)
+    tm_logits, lm_logits = model(x_noisy_in, x_mask, y_noisy_in, z)
     loss = model.loss(tm_logits, lm_logits, y_out, x_out, qz, step)
     return loss
 
@@ -58,7 +58,7 @@ def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config, direction=
                 vocab_tgt.stoi[config["pad"]], config)
 
             model_hypotheses += vocab_tgt.arrays_to_sentences(raw_hypothesis)
-            references += vocab_tgt.arrays_to_sentences(y)
+            references += vocab_tgt.arrays_to_sentences(y_out)
 
         model_hypotheses, references = clean_sentences(model_hypotheses, references, config)
         save_hypotheses(model_hypotheses, epoch, config, direction)
