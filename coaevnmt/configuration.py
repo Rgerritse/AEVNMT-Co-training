@@ -11,7 +11,7 @@ def get_default_config():
         "data_dir": (str, "data/multi30k", False, "Path to data directory"),
         "train_prefix": (str, "training", False, "Train prefix, expect files with src/tgt suffixes."), # Should be changed for real dataset
         "dev_prefix": (str, "dev", False, "Dev prefix, expect files with src/tgt suffixes."),
-        "mono_prefix": (str, "training.mono", False, "Monolingual files prefix, expect files with src/tgt suffixes."),
+        "mono_prefix": (str, "comparable", False, "Monolingual files prefix, expect files with src/tgt suffixes."),
         "test_prefix": (str, "test", False, "Test prefix, expect files with src/tgt suffixes."),
         "out_dir": (str, "output", False, "Path to output directory"),
 

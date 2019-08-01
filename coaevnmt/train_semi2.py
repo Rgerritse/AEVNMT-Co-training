@@ -4,12 +4,11 @@ from joeynmt import data
 from joeynmt.batch import Batch
 
 from configuration import setup_config
-from utils import load_dataset_joey, load_mono_datasets, create_prev
+from utils import load_dataset_joey, load_mono_datasets, create_prev, create_optimizer
 from torch.nn.utils import clip_grad_norm_
 from modules.utils import init_model
 import aevnmt_utils as aevnmt_utils
 import coaevnmt_utils as coaevnmt_utils
-
 
 def create_models(vocab_src, vocab_tgt, config):
     if config["model_type"] == "coaevnmt":
@@ -31,21 +30,21 @@ def optimizer_step(parameters, optimizer, max_gradient_norm):
     optimizer.step()
     optimizer.zero_grad()
 
-def create_optimizer(model, config):
-    parameters = filter(model.parameters())
-    opt = torch.optim.Adam(parameters, lr=config["learning_rate"])
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        opt,
-        mode="max",
-        factor=config["lr_reduce_factor"],
-        patience=config["lr_reduce_patience"],
-        threshold=1e-2,
-        threshold_mode="abs",
-        cooldown=config["lr_reduce_cooldown"],
-        min_lr=config["min_lr"]
-    )
-
-    return opt, scheduler
+# def create_optimizer(model, config):
+#     parameters = filter(model.parameters())
+#     opt = torch.optim.Adam(parameters, lr=config["learning_rate"])
+#     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+#         opt,
+#         mode="max",
+#         factor=config["lr_reduce_factor"],
+#         patience=config["lr_reduce_patience"],
+#         threshold=1e-2,
+#         threshold_mode="abs",
+#         cooldown=config["lr_reduce_cooldown"],
+#         min_lr=config["min_lr"]
+#     )
+#
+#     return opt, scheduler
 
 def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, dataloader,
     dev_data, src_mono_buck, tgt_mono_buck, vocab_src, vocab_tgt, config):
@@ -61,8 +60,8 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, dataloade
 
     print("Training...")
 
-    opt_xy, sched_xy = create_optimizer(model_xy, config)
-    opt_yx, sched_yx = create_optimizer(model_yx, config)
+    opt_xy, sched_xy = create_optimizer(model_xy.parameters(), config)
+    opt_yx, sched_yx = create_optimizer(model_yx.parameters(), config)
 
     saved_epoch = 0
     patience_counter = 0
@@ -97,29 +96,36 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, dataloade
 
             batch = Batch(batch, vocab_src.stoi[config["pad"]], use_cuda=cuda)
 
-            x = batch.src
-            prev_x, x_mask = create_prev(x, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
+            # xout = batch.src
+            # prev_x, x_mask = create_prev(x, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
+            #
+            # y = batch.trg
+            # prev_y = batch.trg_input
+            # y_mask = (prev_y != vocab_tgt.stoi[config["pad"]]).unsqueeze(-2)
+            #
+            #
+            x_out = batch.src
+            x_in, x_mask = create_prev(x_out, src_sos_idx, src_pad_idx)
 
-            y = batch.trg
-            prev_y = batch.trg_input
-            y_mask = (prev_y != vocab_tgt.stoi[config["pad"]]).unsqueeze(-2)
+            y_out = batch.trg
+            y_in = batch.trg_input
+            y_mask = (y_in != tgt_pad_idx).unsqueeze(-2)
 
-            if config["word_dropout"] > 0:
-                probs_prev_x = torch.zeros(prev_x.shape).uniform_(0, 1).to(prev_x.device)
-                prev_x = torch.where(
-                    (probs_prev_x > config["word_dropout"]) | (prev_x == src_pad_idx) | (prev_x == src_eos_idx),
-                    prev_x,
-                    torch.empty(prev_x.shape, dtype=torch.int64).fill_(src_unk_idx).to(prev_x.device)
-                )
-                probs_prev_y = torch.zeros(prev_y.shape).uniform_(0, 1).to(prev_y.device)
-                prev_y = torch.where(
-                    (probs_prev_y > config["word_dropout"]) | (prev_y == tgt_pad_idx) | (prev_y == tgt_eos_idx),
-                    prev_y,
-                    torch.empty(prev_y.shape, dtype=torch.int64).fill_(tgt_unk_idx).to(prev_y.device)
-                )
+            probs_x_in = torch.zeros(x_in.shape).uniform_(0, 1).to(x_in.device)
+            x_noisy_in = torch.where(
+                (probs_x_in > config["word_dropout"]) | (x_in == src_pad_idx) | (x_in == src_eos_idx),
+                x_in,
+                torch.empty(x_in.shape, dtype=torch.int64).fill_(src_unk_idx).to(x_in.device)
+            )
+            probs_y_in = torch.zeros(y_in.shape).uniform_(0, 1).to(y_in.device)
+            y_noisy_in = torch.where(
+                (probs_y_in > config["word_dropout"]) | (y_in == tgt_pad_idx) | (y_in == tgt_eos_idx),
+                y_in,
+                torch.empty(y_in.shape, dtype=torch.int64).fill_(tgt_unk_idx).to(y_in.device)
+            )
 
             # Bilingual loss
-            bi_loss = bi_train_fn(model_xy, model_yx, prev_x, x, x_mask, prev_y, y, y_mask, step)
+            bi_loss = bi_train_fn(model_xy, model_yx, x_in, x_noisy_in, x_out, x_mask, y_in, y_noisy_in, y_out, y_mask, step)
             bi_loss.backward()
 
             optimizer_step(model_xy.parameters(), opt_xy, config["max_gradient_norm"])
@@ -140,12 +146,12 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, dataloade
                 except:
                     tgt_mono_iter = iter(tgt_mono_buck)
                     y_mono_batch = next(tgt_mono_iter)
-                y_mono_batch = Batch(y_mono_batch, vocab_tgt.stoi[config["pad"]], use_cuda=cuda)
-                y_mono = y_mono_batch.src
+                y_mono_batch = Batch(y_mono_batch, tgt_pad_idx, use_cuda=cuda)
+                y_out = y_mono_batch.src
 
-                prev_y_mono, y_mono_mask = create_prev(y_mono, vocab_tgt.stoi[config["sos"]], vocab_tgt.stoi[config["pad"]])
-                mono_y_loss = mono_train_fn(model_xy, model_yx, prev_y_mono, y_mono_mask, y_mono, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]], step)
-                mono_y_loss.backward()
+                y_in, y_mask = create_prev(y_out, tgt_sos_idx, tgt_pad_idx)
+                y_mono_loss = mono_train_fn(model_xy, model_yx, y_in, y_mask, y_out, src_sos_idx, src_pad_idx, step)
+                y_mono_loss.backward()
 
                 optimizer_step(model_xy.parameters(), opt_xy, config["max_gradient_norm"])
 
@@ -155,16 +161,16 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, dataloade
                 except:
                     src_mono_iter = iter(src_mono_buck)
                     x_mono_batch = next(src_mono_iter)
-                x_mono_batch = Batch(x_mono_batch, vocab_src.stoi[config["pad"]], use_cuda=cuda)
-                x_mono = x_mono_batch.src
+                x_mono_batch = Batch(x_mono_batch, src_pad_idx, use_cuda=cuda)
+                x_out = x_mono_batch.src
 
-                prev_x_mono, x_mono_mask = create_prev(x_mono, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
-                mono_x_loss = mono_train_fn(model_yx, model_xy, prev_x_mono, x_mono_mask, x_mono, vocab_tgt.stoi[config["sos"]], vocab_tgt.stoi[config["pad"]], step)
+                x_in, x_mask = create_prev(x_out, src_sos_idx, src_pad_idx)
+                mono_x_loss = mono_train_fn(model_yx, model_xy, x_in, x_mask, x_out, tgt_sos_idx, tgt_pad_idx, step)
                 mono_x_loss.backward()
 
                 optimizer_step(model_yx.parameters(), opt_yx, config["max_gradient_norm"])
 
-                print_string += ", Y-Loss: {:.2f}, X-Loss: {:.2f}".format(mono_y_loss.item(), mono_x_loss.item())
+                print_string += ", Y-Loss: {:.2f}, X-Loss: {:.2f}".format(y_mono_loss.item(), mono_x_loss.item())
             print(print_string)
 
         val_bleu_xy = evaluate(model_xy, validate_fn, dev_data, vocab_src, vocab_tgt, epoch, config, direction="xy")

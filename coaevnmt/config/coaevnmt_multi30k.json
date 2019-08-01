@@ -1,7 +1,7 @@
 {
     "attention": "bahdanau",
     "batch_size_train": 40,
-    "bilingual_warmup": 0,
+    "bilingual_warmup": 10,
     "beam_width": 10,
     "rnn_type": "lstm",
     "dropout": 0.5,
@@ -9,7 +9,7 @@
     "hidden_size": 256,
     "kl_free_nats": 5,
     "kl_annealing_steps": 0,
-    "latent_size": 32,
+    "latent_size": 64,
     "learning_rate": 0.002,
     "length_penalty": 1.0,
     "lr_reduce_cooldown": 2,
@@ -19,14 +19,14 @@
     "max_len": 50,
     "min_lr": 5e-07,
     "model_type": "coaevnmt",
-    "num_dec_layers": 2,
+    "num_dec_layers": 1,
     "num_enc_layers": 1,
-    "num_epochs": 30,
+    "num_epochs": 100,
     "patience": 10,
     "src": "en",
     "share_vocab": false,
     "subword_token": "@@",
     "tied_embeddings": true,
     "tgt": "de",
-    "word_dropout": 0.0
+    "word_dropout": 0.1
 }

@@ -29,79 +29,80 @@ def create_model(vocab_src, vocab_tgt, config):
     return model
 
 
-def bi_train_fn(model_xy, model_yx, prev_x, x, x_mask, prev_y, y, y_mask, step):
-    qz_xy = model_xy.inference(prev_x, x_mask)
-    qz_yx = model_yx.inference(prev_y, y_mask)
+def bi_train_fn(model_xy, model_yx, x_in, x_noisy_in, x_out, x_mask, y_in, y_noisy_in, y_out, y_mask, step):
+
+    qz_xy = model_xy.inference(x_in, x_mask)
+    qz_yx = model_yx.inference(y_in, y_mask)
 
     z_xy = qz_xy.rsample()
     z_yx = qz_yx.rsample()
 
-    tm_logits_xy, lm_logits_xy = model_xy(prev_x, x_mask, prev_y, z_xy)
-    tm_logits_yx, lm_logits_yx = model_yx(prev_y, y_mask, prev_x, z_yx)
+    tm_logits_xy, lm_logits_xy = model_xy(x_noisy_in, x_mask, y_noisy_in, z_xy)
+    tm_logits_yx, lm_logits_yx = model_yx(y_noisy_in, y_mask, x_noisy_in, z_yx)
 
-    loss_xy = model_xy.loss(tm_logits_xy, lm_logits_xy, y, x, qz_xy, step)
-    loss_yx = model_yx.loss(tm_logits_yx, lm_logits_yx, x, y, qz_yx, step)
+    loss_xy = model_xy.loss(tm_logits_xy, lm_logits_xy, y_out, x_out, qz_xy, step)
+    loss_yx = model_yx.loss(tm_logits_yx, lm_logits_yx, x_out, y_out, qz_yx, step)
 
     loss = loss_xy + loss_yx
     return loss
 
-def mono_train_fn(model_xy, model_yx, prev_y, y_mask, y, src_sos_idx, src_pad_idx, step):
+def mono_train_fn(model_xy, model_yx, y_in, y_mask, y_out, src_sos_idx, src_pad_idx, step):
     with torch.no_grad():
-        qz_y = model_yx.inference(prev_y, y_mask)
+        qz_y = model_yx.inference(y_in, y_mask)
         z_y = qz_y.rsample()
 
-        enc_output, enc_final = model_yx.encode(prev_y, z_y)
+        enc_output, enc_final = model_yx.encode(y_in, z_y)
         dec_hidden = model_yx.init_decoder(enc_output, enc_final, z_y)
-        x = model_yx.sample(enc_output, y_mask, dec_hidden)
+        x_out = model_yx.sample(enc_output, y_mask, dec_hidden)
 
-        x = torch.from_numpy(x).to(enc_output.device)
-        prev_x, x_mask = create_prev(x, src_pad_idx, src_pad_idx)
+        x_out = torch.from_numpy(x_out).to(enc_output.device)
+        x_in, x_mask = create_prev(x_out, src_pad_idx, src_pad_idx)
 
-    qz_x = model_xy.inference(prev_x, x_mask)
+    qz_x = model_xy.inference(x_in, x_mask)
     z_x = qz_x.rsample()
-    tm_logits, lm_logits = model_xy(prev_x, x_mask, prev_y, z_x)
+    tm_logits, lm_logits = model_xy(x_in, x_mask, y_in, z_x)
 
-    loss = model_xy.loss(tm_logits, lm_logits, y, x, qz_x, step)
+    loss = model_xy.loss(tm_logits, lm_logits, y_out, x_out, qz_x, step)
     return loss
 
-def train_step(model, prev_x, x, x_mask, prev_y, y, y_mask,
-    prev_y_mono, y_mono, y_mono_mask, prev_x_mono, x_mono, x_mono_mask, share_latent_var, src_pad_idx, tgt_pad_idx, step):
-    # Bilingual src2tgt model1
-    qz1 = model.src_inference(prev_x, x_mask)
-    z1 = qz1.rsample()
-    tm1_logits, lm1_logits = model.forward_src2tgt(prev_x, x_mask, prev_y, z1)
-
-    # Bilingual tgt2src model2
-    qz2 = model.tgt_inference(prev_y, y_mask)
-    z2 = qz2.rsample()
-    tm2_logits, lm2_logits = model.forward_tgt2src(prev_y, y_mask, prev_x, z2)
-
-    # Monolingual tgt
-    sampled_x, qz3 = model.sample_src(prev_y_mono, y_mono_mask)
-    sampled_x = torch.from_numpy(sampled_x).to(x.device)
-    sampled_x_mask = (sampled_x != src_pad_idx).unsqueeze(-2)
-
-    if not share_latent_var:
-        qz3 = model.src_inference(sampled_x, sampled_x_mask)
-    z3 = qz3.rsample()
-    tm3_logits, lm3_logits = model.forward_src2tgt(sampled_x, sampled_x_mask, prev_y_mono, z3)
-
-    # Monolingual src
-    sampled_y, qz4 = model.sample_tgt(prev_x_mono, x_mono_mask)
-    sampled_y = torch.from_numpy(sampled_y).to(y.device)
-    sampled_y_mask = (sampled_y != tgt_pad_idx).unsqueeze(-2)
-
-    if not share_latent_var:
-        qz4 = model.tgt_inference(sampled_y, sampled_y_mask)
-    z4 = qz4.rsample()
-    tm4_logits, lm4_logits = model.forward_tgt2src(sampled_y, sampled_y_mask, prev_x_mono, z4)
-
-    loss = model.loss(tm1_logits, lm1_logits, qz1,
-        tm2_logits, lm2_logits, qz2, y, x,
-        tm3_logits, lm3_logits, y_mono, sampled_x, qz3,
-        tm4_logits, lm4_logits, x_mono, sampled_y, qz4, step)
-
-    return loss
+# def train_step(model, x_in, x_out, x_mask, y_in, y_out, y_mask,
+#     prev_y_mono, y_mono, y_mono_mask, prev_x_mono, x_mono, x_mono_mask, share_latent_var, src_pad_idx, tgt_pad_idx, step):
+#     # Bilingual src2tgt model1
+#     qz1 = model.src_inference(x_in, x_mask)
+#     z1 = qz1.rsample()
+#     tm1_logits, lm1_logits = model.forward_src2tgt(x_in, x_mask, y_in, z1)
+#
+#     # Bilingual tgt2src model2
+#     qz2 = model.tgt_inference(y_in, y_mask)
+#     z2 = qz2.rsample()
+#     tm2_logits, lm2_logits = model.forward_tgt2src(y_in, y_mask, x_in, z2)
+#
+#     # Monolingual tgt
+#     sampled_x, qz3 = model.sample_src(prev_y_mono, y_mono_mask)
+#     sampled_x = torch.from_numpy(sampled_x).to(x_out.device)
+#     sampled_x_mask = (sampled_x != src_pad_idx).unsqueeze(-2)
+#
+#     if not share_latent_var:
+#         qz3 = model.src_inference(sampled_x, sampled_x_mask)
+#     z3 = qz3.rsample()
+#     tm3_logits, lm3_logits = model.forward_src2tgt(sampled_x, sampled_x_mask, prev_y_mono, z3)
+#
+#     # Monolingual src
+#     sampled_y, qz4 = model.sample_tgt(prev_x_mono, x_mono_mask)
+#     sampled_y = torch.from_numpy(sampled_y).to(y_out.device)
+#     sampled_y_mask = (sampled_y != tgt_pad_idx).unsqueeze(-2)
+#
+#     if not share_latent_var:
+#         qz4 = model.tgt_inference(sampled_y, sampled_y_mask)
+#     z4 = qz4.rsample()
+#     tm4_logits, lm4_logits = model.forward_tgt2src(sampled_y, sampled_y_mask, prev_x_mono, z4)
+#
+#     loss = model.loss(tm1_logits, lm1_logits, qz1,
+#         tm2_logits, lm2_logits, qz2, y_out, x_out,
+#         tm3_logits, lm3_logits, y_mono, sampled_x, qz3,
+#         tm4_logits, lm4_logits, x_mono, sampled_y, qz4, step)
+#
+#     return loss
 
 def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
     model.eval()
@@ -114,14 +115,14 @@ def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
             cuda = False if config["device"] == "cpu" else True
             batch = Batch(batch, vocab_src.stoi[config["pad"]], use_cuda=cuda)
 
-            x = batch.src
-            prev_x, x_mask = create_prev(x, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
-            y = batch.trg
+            x_out = batch.src
+            x_in, x_mask = create_prev(x_out, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
+            y_out = batch.trg
 
-            qz = model.src_inference(prev_x, x_mask)
+            qz = model.src_inference(x_in, x_mask)
             z = qz.mean
 
-            enc_output, enc_hidden = model.encode_src(prev_x, z)
+            enc_output, enc_hidden = model.encode_src(x_in, z)
             dec_hidden = model.init_tgt_decoder(enc_output, enc_hidden, z)
 
             raw_hypothesis = beam_search(model.tgt_decoder, model.emb_tgt,
@@ -130,7 +131,7 @@ def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
                 vocab_tgt.stoi[config["pad"]], config)
 
             model_hypotheses += vocab_tgt.arrays_to_sentences(raw_hypothesis)
-            references += vocab_tgt.arrays_to_sentences(y)
+            references += vocab_tgt.arrays_to_sentences(y_out)
 
         model_hypotheses, references = clean_sentences(model_hypotheses, references, config)
         save_hypotheses(model_hypotheses, epoch, config)
