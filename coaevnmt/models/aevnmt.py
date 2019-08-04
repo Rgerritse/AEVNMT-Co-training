@@ -96,6 +96,7 @@ class AEVNMT(nn.Module):
 
         return tm_logits, lm_logits
 
+    # Change this with ancestral_sample
     def sample(self, enc_output, y_mask, dec_hidden):
         batch_size = y_mask.size(0)
         prev = y_mask.new_full(size=[batch_size, 1], fill_value=self.vocab_tgt.stoi[self.config["sos"]],

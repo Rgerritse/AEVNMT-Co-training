@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from joeynmt.helpers import tile
-
+from torch.distributions.categorical import Categorical
 
 def greedy_lm(decoder, emb_tgt, logits_layer, lm_hidden, sos_idx, batch_size, config):
     prev_y = torch.full(size=[batch_size, 1], fill_value=sos_idx, dtype=torch.long,
@@ -22,11 +22,56 @@ def greedy_lm(decoder, emb_tgt, logits_layer, lm_hidden, sos_idx, batch_size, co
     stacked_output = np.stack(output, axis=1)  # batch, time
     return stacked_output
 
+
+def ancestral_sample(decoder, emb_tgt, generate_fn, enc_output, dec_hidden, x_mask, sos_idx, eos_idx, pad_idx, config, greedy=False):
+    batch_size = x_mask.size(0)
+    prev_y = x_mask.new_full(size=[batch_size, 1], fill_value=sos_idx,
+                               dtype=torch.long)
+
+    # print("prev_y: ", prev_y)
+    predictions = []
+    log_probs = []
+    is_complete = torch.zeros_like(prev_y).byte()
+    for t in range(config["max_len"]):
+        embed_y = emb_tgt(prev_y)
+        pre_output, dec_hidden = decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden)
+        logits = generate_fn(pre_output)
+        py_x = Categorical(logits=logits)
+        if greedy:
+            prediction = torch.argmax(logits, dim=-1)
+        else:
+            prediction = py_x.sample()
+        prev_y = prediction
+
+        predictions.append(torch.where(is_complete, torch.full_like(prediction, pad_idx), prediction))
+        is_complete = is_complete | (prediction == eos_idx)
+        # asd
+
+        # print(prev_y)
+        # log_prob_pred = py_x.log_prob(prediction)
+        # log_probs.append(torch.where(is_complete, torch.zeros_like(log_prob_pred), log_prob_pred))
+        # print(torch.full_like(prediction, pad_idx))
+        # print(prediciton)
+        # asd
+        # print(torch.where(is_complete, torch.full_like(prediction, pad_idx), prediction))
+        # predictions.append(torch.where(is_complete, torch.full_like(prediction, pad_idx), prediction))
+        # is_complete = is_complete | (prediction == eos_idx)
+        # greedy decoding: choose arg max over vocabulary in each step
+        # next_word = torch.argmax(logits, dim=-1)  # batch x time=1
+        # output.append(next_word.squeeze(1).cpu().numpy())
+        # prev_y = next_word
+        # attention_scores.append(att_probs.squeeze(1).cpu().numpy())
+      # batch, time
+    return torch.cat(predictions, dim=1)
+
 def greedy(decoder, emb_tgt, logits_layer, enc_output, dec_hidden, x_mask, sos_idx, config):
     batch_size = x_mask.size(0)
     prev_y = x_mask.new_full(size=[batch_size, 1], fill_value=sos_idx,
                                dtype=torch.long)
+
+
     output = []
+    is_complete = torch.zeros_like(prev_y).unsqueeze(-1).byte()
     for t in range(config["max_len"]):
         # decode one single step
         embed_y = emb_tgt(prev_y)
