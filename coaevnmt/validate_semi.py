@@ -60,7 +60,7 @@ def main():
     print("validation: {}-{}".format(config["src"], config["tgt"]))
     evaluate(model_xy, dev_data, vocab_src, vocab_tgt, config, direction="xy")
 
-    print("validation: {}-{}".format(config["tgt"], config["src"], ))
+    print("validation: {}-{}".format(config["tgt"], config["src"]))
     evaluate(model_yx, dev_data, vocab_tgt, vocab_src, config, direction="yx")
 
 
