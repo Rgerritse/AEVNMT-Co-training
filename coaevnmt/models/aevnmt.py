@@ -130,9 +130,10 @@ class AEVNMT(nn.Module):
         pz = torch.distributions.Normal(loc=self.prior_loc, scale=self.prior_scale).expand(qz.mean.size())
         kl_loss = torch.distributions.kl.kl_divergence(qz, pz)
         kl_loss = kl_loss.sum(dim=1)
-        kl_loss *= kl_weight
+
         if (self.config["kl_free_nats"] > 0 and (self.config["kl_annealing_steps"] == 0 or step >= self.config["kl_annealing_steps"])):
             kl_loss = torch.clamp(kl_loss, min=self.config["kl_free_nats"])
+        kl_loss *= kl_weight
 
         tm_log_likelihood = -tm_loss
         lm_log_likelihood = -lm_loss

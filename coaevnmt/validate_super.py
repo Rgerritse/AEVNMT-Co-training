@@ -14,7 +14,9 @@ def main():
     model, _, validate_fn = create_model(vocab_src, vocab_tgt, config)
     model.to(torch.device(config["device"]))
 
-    checkpoint_path = "output/aevnmt_word_dropout_0.1/checkpoints/aevnmt_word_dropout_0.1"
+    # checkpoint_path = "output/aevnmt_word_dropout_0.1/checkpoints/aevnmt_word_dropout_0.1"
+    # checkpoint_path = "output/aevnmt_params_de-en/checkpoints/aevnmt_params_de-en"
+    checkpoint_path = "output/aevnmt_kl_10_wd_0.2/checkpoints/aevnmt_kl_10_wd_0.2"
     state = torch.load(checkpoint_path)
     model.load_state_dict(state['state_dict'])
 
@@ -39,6 +41,7 @@ def main():
             qz = model.inference(x_in, x_mask)
             z = qz.mean
             # z = torch.zeros_like(z)
+            # z = None
 
             enc_output, enc_hidden = model.encode(x_in, z)
             dec_hidden = model.init_decoder(enc_output, enc_hidden, z)

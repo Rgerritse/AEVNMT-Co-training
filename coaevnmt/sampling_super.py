@@ -114,6 +114,8 @@ def main():
     model.to(torch.device(config["device"]))
 
     checkpoint_path = "output/aevnmt_word_dropout_0.1/checkpoints/aevnmt_word_dropout_0.1"
+    # checkpoint_path = "output/aevnmt_params_de-en/checkpoints/aevnmt_params_de-en"
+    # checkpoint_path = "output/aevnmt_kl_10_wd_0.2/checkpoints/aevnmt_kl_10_wd_0.2"
     state = torch.load(checkpoint_path)
     model.load_state_dict(state['state_dict'])
 

@@ -20,10 +20,10 @@
     "num_epochs": 30,
     "pass_enc_final": true,
     "patience": 10,
-    "src": "en",
+    "src": "de",
     "share_vocab": false,
     "subword_token": "@@",
     "tied_embeddings": true,
-    "tgt": "de",
+    "tgt": "en",
     "word_dropout": 0.0
 }

@@ -29,6 +29,7 @@ def evaluate(model, dataset_dev, vocab_src, vocab_tgt, config, direction=None):
 
             qz = model.inference(x_in, x_mask)
             z = qz.mean
+            # z = torch.zeros_like(z)
 
             enc_output, enc_hidden = model.encode(x_in, z)
             dec_hidden = model.init_decoder(enc_output, enc_hidden, z)
