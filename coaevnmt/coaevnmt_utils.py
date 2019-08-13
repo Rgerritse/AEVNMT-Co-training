@@ -9,6 +9,9 @@ from joeynmt import data
 from joeynmt.batch import Batch
 import torch
 from tqdm import tqdm
+from modules.search import ancestral_sample
+from data_prep.constants import UNK_TOKEN, PAD_TOKEN, SOS_TOKEN, EOS_TOKEN
+from data_prep import batch_to_sentences, create_batch
 
 def create_model(vocab_src, vocab_tgt, config):
     inference_model1 = InferenceModel(config)
@@ -46,17 +49,29 @@ def bi_train_fn(model_xy, model_yx, x_in, x_noisy_in, x_out, x_mask, y_in, y_noi
     loss = loss_xy + loss_yx
     return loss
 
-def mono_train_fn(model_xy, model_yx, y_in, y_mask, y_out, src_sos_idx, src_pad_idx, step):
+def mono_train_fn(model_xy, model_yx, y_in, y_mask, y_out, vocab_src, config, step):
+    device = torch.device("cpu") if config["device"] == "cpu" else torch.device("cuda:0")
     with torch.no_grad():
         qz_y = model_yx.inference(y_in, y_mask)
         z_y = qz_y.rsample()
 
         enc_output, enc_final = model_yx.encode(y_in, z_y)
         dec_hidden = model_yx.init_decoder(enc_output, enc_final, z_y)
-        x_out = model_yx.sample(enc_output, y_mask, dec_hidden)
 
-        x_out = torch.from_numpy(x_out).to(enc_output.device)
-        x_in, x_mask = create_prev(x_out, src_pad_idx, src_pad_idx)
+        x_samples = ancestral_sample(model_yx.decoder,
+                                     model_yx.emb_tgt,
+                                     model_yx.generate_tm,
+                                     enc_output,
+                                     dec_hidden,
+                                     y_mask,
+                                     vocab_src[SOS_TOKEN],
+                                     vocab_src[EOS_TOKEN],
+                                     vocab_src[PAD_TOKEN],
+                                     config,
+                                     greedy=config["greedy_sampling"])
+        x_samples = batch_to_sentences(x_samples, vocab_src)
+        x_in, x_out, x_mask, _ = create_batch(x_samples, vocab_src, device)
+        x_mask = x_mask.unsqueeze(1)
 
     qz_x = model_xy.inference(x_in, x_mask)
     z_x = qz_x.rsample()
@@ -104,36 +119,36 @@ def mono_train_fn(model_xy, model_yx, y_in, y_mask, y_out, src_sos_idx, src_pad_
 #
 #     return loss
 
-def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
-    model.eval()
-    with torch.no_grad():
-        model_hypotheses = []
-        references = []
-
-        dataloader = data.make_data_iter(dataset_dev, config["batch_size_eval"], train=False)
-        for batch in tqdm(dataloader):
-            cuda = False if config["device"] == "cpu" else True
-            batch = Batch(batch, vocab_src.stoi[config["pad"]], use_cuda=cuda)
-
-            x_out = batch.src
-            x_in, x_mask = create_prev(x_out, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
-            y_out = batch.trg
-
-            qz = model.src_inference(x_in, x_mask)
-            z = qz.mean
-
-            enc_output, enc_hidden = model.encode_src(x_in, z)
-            dec_hidden = model.init_tgt_decoder(enc_output, enc_hidden, z)
-
-            raw_hypothesis = beam_search(model.tgt_decoder, model.emb_tgt,
-                model.tgt_decoder.logits_layer, enc_output, dec_hidden, x_mask, len(vocab_tgt),
-                vocab_tgt.stoi[config["sos"]], vocab_tgt.stoi[config["eos"]],
-                vocab_tgt.stoi[config["pad"]], config)
-
-            model_hypotheses += vocab_tgt.arrays_to_sentences(raw_hypothesis)
-            references += vocab_tgt.arrays_to_sentences(y_out)
-
-        model_hypotheses, references = clean_sentences(model_hypotheses, references, config)
-        save_hypotheses(model_hypotheses, epoch, config)
-        bleu = compute_bleu(model_hypotheses, references, epoch, config)
-        return bleu
+# def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config):
+#     model.eval()
+#     with torch.no_grad():
+#         model_hypotheses = []
+#         references = []
+#
+#         dataloader = data.make_data_iter(dataset_dev, config["batch_size_eval"], train=False)
+#         for batch in tqdm(dataloader):
+#             cuda = False if config["device"] == "cpu" else True
+#             batch = Batch(batch, vocab_src.stoi[config["pad"]], use_cuda=cuda)
+#
+#             x_out = batch.src
+#             x_in, x_mask = create_prev(x_out, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
+#             y_out = batch.trg
+#
+#             qz = model.src_inference(x_in, x_mask)
+#             z = qz.mean
+#
+#             enc_output, enc_hidden = model.encode_src(x_in, z)
+#             dec_hidden = model.init_tgt_decoder(enc_output, enc_hidden, z)
+#
+#             raw_hypothesis = beam_search(model.tgt_decoder, model.emb_tgt,
+#                 model.tgt_decoder.logits_layer, enc_output, dec_hidden, x_mask, len(vocab_tgt),
+#                 vocab_tgt.stoi[config["sos"]], vocab_tgt.stoi[config["eos"]],
+#                 vocab_tgt.stoi[config["pad"]], config)
+#
+#             model_hypotheses += vocab_tgt.arrays_to_sentences(raw_hypothesis)
+#             references += vocab_tgt.arrays_to_sentences(y_out)
+#
+#         model_hypotheses, references = clean_sentences(model_hypotheses, references, config)
+#         save_hypotheses(model_hypotheses, epoch, config)
+#         bleu = compute_bleu(model_hypotheses, references, epoch, config)
+#         return bleu

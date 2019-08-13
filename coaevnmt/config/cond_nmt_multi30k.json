@@ -17,13 +17,13 @@
     "model_type": "cond_nmt",
     "num_dec_layers": 1,
     "num_enc_layers": 1,
-    "num_epochs": 30,
+    "num_epochs": 50,
     "pass_enc_final": true,
     "patience": 10,
-    "src": "de",
+    "src": "en",
     "share_vocab": false,
     "subword_token": "@@",
     "tied_embeddings": true,
-    "tgt": "en",
+    "tgt": "de",
     "word_dropout": 0.0
 }

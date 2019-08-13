@@ -107,6 +107,7 @@ class Decoder(nn.Module):
         else:
             query = dec_hidden
         query = query[-1].unsqueeze(1)
+        embed_y = embed_y.unsqueeze(1)
         context, _ = self.attention.forward(query, x_mask, enc_output)
         rnn_input = torch.cat([embed_y, context], dim=2)
 

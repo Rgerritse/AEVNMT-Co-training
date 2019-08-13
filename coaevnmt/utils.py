@@ -1,10 +1,37 @@
-import os, re
+import os, re, sys
 from joeynmt import data
 from joeynmt.attention import BahdanauAttention, LuongAttention
 from joeynmt.constants import UNK_TOKEN, EOS_TOKEN, BOS_TOKEN, PAD_TOKEN
+from data_prep import Vocabulary, ParallelDataset, TextDataset
 import subprocess
 import sacrebleu
 import torch
+
+def load_vocabularies(config):
+    vocab_src_file = config["data_dir"] + "/" + config["vocab_prefix"] + "."+ config["src"]
+    vocab_tgt_file = config["data_dir"] + "/" + config["vocab_prefix"] + "."+ config["tgt"]
+
+    vocab_src = Vocabulary.from_file(vocab_src_file, max_size=sys.maxsize)
+    vocab_tgt = Vocabulary.from_file(vocab_tgt_file, max_size=sys.maxsize)
+    return vocab_src, vocab_tgt
+
+def load_data(config, vocab_src, vocab_tgt, use_memmap=False):
+    train_src = config["data_dir"] + "/" + config["train_prefix"] + "." + config["src"]
+    train_tgt = config["data_dir"] + "/" + config["train_prefix"] + "." + config["tgt"]
+    val_src = config["data_dir"] + "/" + config["dev_prefix"] + "." + config["src"]
+    val_tgt = config["data_dir"] + "/" + config["dev_prefix"] + "." + config["tgt"]
+    opt_data = dict()
+
+    training_data = ParallelDataset(train_src, train_tgt, max_length=config["max_len"])
+    val_data = ParallelDataset(val_src, val_tgt, max_length=-1)
+
+    if config["model_type"] == "coaevnmt":
+        mono_src_path = "{}/{}.{}".format(config["data_dir"], config["mono_prefix"], config["src"])
+        mono_tgt_path = "{}/{}.{}".format(config["data_dir"], config["mono_prefix"], config["tgt"])
+        opt_data['mono_src'] = TextDataset(mono_src_path, max_length=config["max_len"])
+        opt_data['mono_tgt'] = TextDataset(mono_tgt_path, max_length=config["max_len"])
+
+    return training_data, val_data, opt_data
 
 def load_dataset_joey(config):
     print("Creating datasets and vocabularies...")
@@ -89,13 +116,13 @@ def clean_sentences(hypotheses, references, config):
 
     clean_hyps = []
     for sent in hypotheses:
-        clean_sent = ' '.join(sent)
-        clean_hyps.append(re.sub("({0} )|({0} ?$)|( {0})|(^ ?{0})".format(subword_token), "", clean_sent))
+        # clean_sent = ' '.join(sent)
+        clean_hyps.append(re.sub("({0} )|({0} ?$)|( {0})|(^ ?{0})".format(subword_token), "", sent))
 
     clean_refs = []
     for sent in references:
-        clean_sent = ' '.join(sent)
-        clean_refs.append(re.sub("({0} )|({0} ?$)|( {0})|(^ ?{0})".format(subword_token), "", clean_sent))
+        # clean_sent = ' '.join(sent)
+        clean_refs.append(re.sub("({0} )|({0} ?$)|( {0})|(^ ?{0})".format(subword_token), "", sent))
 
     return clean_hyps, clean_refs
 
@@ -107,8 +134,10 @@ def save_hypotheses(hypotheses, epoch, config, direction=None):
     if not direction is None:
         file += "-" + direction
     file += "." + config["tgt"]
+    # print(hypotheses)
     with open(file, 'a') as the_file:
        for sent in hypotheses:
+           # print(sent)
            the_file.write(sent + '\n')
 
 def compute_bleu(hypotheses, references, epoch, config):

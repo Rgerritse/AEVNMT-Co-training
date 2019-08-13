@@ -5,6 +5,7 @@ from torch.distributions.normal import Normal
 from torch.distributions.categorical import Categorical
 import numpy as np
 from modules.utils import tile_rnn_hidden
+from data_prep import PAD_TOKEN, SOS_TOKEN, EOS_TOKEN
 
 class AEVNMT(nn.Module):
     def __init__(self, vocab_src, vocab_tgt, inference_model, encoder, decoder, language_model, config):
@@ -17,22 +18,32 @@ class AEVNMT(nn.Module):
         self.vocab_src = vocab_src
         self.vocab_tgt = vocab_tgt
 
-        self.emb_src = nn.Embedding(len(vocab_src), config["emb_size"], padding_idx=vocab_src.stoi[config["pad"]])
-        self.emb_tgt = nn.Embedding(len(vocab_tgt), config["emb_size"], padding_idx=vocab_tgt.stoi[config["pad"]])
+        self.emb_src = nn.Embedding(vocab_src.size(), config["emb_size"], padding_idx=vocab_src[PAD_TOKEN])
+        self.emb_tgt = nn.Embedding(vocab_tgt.size(), config["emb_size"], padding_idx=vocab_tgt[PAD_TOKEN])
 
         self.enc_init_layer = nn.Linear(config["latent_size"], config["hidden_size"])
         self.dec_init_layer = nn.Linear(config["latent_size"], config["hidden_size"])
         self.lm_init_layer = nn.Linear(config["latent_size"], config["hidden_size"])
 
         if not config["tied_embeddings"]:
-            self.tm_logits_matrix = nn.Parameter(torch.randn(len(vocab_tgt), config["hidden_size"]))
-            self.lm_logits_matrix = nn.Parameter(torch.randn(len(vocab_src), config["hidden_size"]))
+            self.tm_logits_matrix = nn.Parameter(torch.randn(vocab_tgt.size(), config["hidden_size"]))
+            self.lm_logits_matrix = nn.Parameter(torch.randn(vocab_src.size(), config["hidden_size"]))
 
         self.dropout = nn.Dropout(config["dropout"])
         self.config = config
 
         self.register_buffer("prior_loc", torch.zeros([config["latent_size"]]))
         self.register_buffer("prior_scale", torch.ones([config["latent_size"]]))
+
+    def src_embed(self, x):
+        x_embed = self.emb_src(x)
+        x_embed = self.dropout(x_embed)
+        return x_embed
+
+    def tgt_embed(self, y):
+        y_embed = self.emb_tgt(y)
+        y_embed = self.dropout(y_embed)
+        return y_embed
 
     def inference(self, x, x_mask):
         embed_x = self.emb_src(x).detach()
@@ -86,8 +97,8 @@ class AEVNMT(nn.Module):
         tm_outputs = []
         max_len = y.shape[-1]
         for t in range(max_len):
-            prev_y = y[:, t].unsqueeze(1).long()
-            embed_y = self.dropout(self.emb_tgt(prev_y))
+            prev_y = y[:, t]
+            embed_y = self.tgt_embed(prev_y)
             pre_output, dec_hidden = self.decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden)
             logits = self.generate_tm(pre_output)
             tm_outputs.append(logits)
@@ -99,7 +110,7 @@ class AEVNMT(nn.Module):
     # Change this with ancestral_sample
     def sample(self, enc_output, y_mask, dec_hidden):
         batch_size = y_mask.size(0)
-        prev = y_mask.new_full(size=[batch_size, 1], fill_value=self.vocab_tgt.stoi[self.config["sos"]],
+        prev = y_mask.new_full(size=[batch_size, 1], fill_value=self.vocab_tgt[SOS_TOKEN],
             dtype=torch.long)
 
         output = []
@@ -120,11 +131,11 @@ class AEVNMT(nn.Module):
             kl_weight *= 0.001 + (1.0-0.001) / self.config["kl_annealing_steps"] * step
 
         tm_logits = tm_logits.permute(0, 2, 1)
-        tm_loss = F.cross_entropy(tm_logits, tm_targets, ignore_index=self.vocab_tgt.stoi[self.config["pad"]], reduction="none")
+        tm_loss = F.cross_entropy(tm_logits, tm_targets, ignore_index=self.vocab_tgt[PAD_TOKEN], reduction="none")
         tm_loss = tm_loss.sum(dim=1)
 
         lm_logits = lm_logits.permute(0, 2, 1)
-        lm_loss = F.cross_entropy(lm_logits, lm_targets, ignore_index=self.vocab_src.stoi[self.config["pad"]], reduction="none")
+        lm_loss = F.cross_entropy(lm_logits, lm_targets, ignore_index=self.vocab_src[PAD_TOKEN], reduction="none")
         lm_loss = lm_loss.sum(dim=1)
 
         pz = torch.distributions.Normal(loc=self.prior_loc, scale=self.prior_scale).expand(qz.mean.size())

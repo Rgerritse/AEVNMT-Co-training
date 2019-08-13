@@ -9,13 +9,16 @@ from modules.search import beam_search
 from utils import create_attention, clean_sentences, compute_bleu, save_hypotheses, create_prev
 from joeynmt import data
 from joeynmt.batch import Batch
+from data_prep import create_batch, batch_to_sentences, PAD_TOKEN, SOS_TOKEN, EOS_TOKEN
+from torch.utils.data import DataLoader
+from data_prep import BucketingParallelDataLoader
 
 def create_model(vocab_src, vocab_tgt, config):
     inference_model = InferenceModel(config)
     encoder = Encoder(config)
     attention = create_attention(config)
-    decoder = Decoder(attention, len(vocab_tgt), config)
-    language_model = LanguageModel(len(vocab_src), config)
+    decoder = Decoder(attention, vocab_tgt.size(), config)
+    language_model = LanguageModel(vocab_src.size(), config)
     model = AEVNMT(vocab_src, vocab_tgt, inference_model, encoder, decoder, language_model, config)
     return model
 
@@ -27,24 +30,23 @@ def train_step(model, x_in, x_noisy_in, x_out, x_len, x_mask, y_in, y_noisy_in, 
     loss = model.loss(tm_logits, lm_logits, y_out, x_out, qz, step)
     return loss
 
-def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config, direction=None):
+def validate(model, dev_data, vocab_src, vocab_tgt, epoch, config, direction=None):
     model.eval()
+    device = torch.device("cpu") if config["device"] == "cpu" else torch.device("cuda:0")
     with torch.no_grad():
         model_hypotheses = []
         references = []
 
-        dataloader = data.make_data_iter(dataset_dev, config["batch_size_eval"], train=False)
-        for batch in tqdm(dataloader):
-            cuda = False if config["device"] == "cpu" else True
-            batch = Batch(batch, vocab_src.stoi[config["pad"]], use_cuda=cuda)
-
+        val_dl = DataLoader(dev_data, batch_size=config["batch_size_eval"],
+                        shuffle=False, num_workers=4)
+        val_dl = BucketingParallelDataLoader(val_dl)
+        for sentences_x, sentences_y in val_dl:
             if direction == None or direction == "xy":
-                x_out = batch.src
-                y_out = batch.trg
-            elif direction == "yx":
-                x_out = batch.trg
-                y_out = batch.src
-            x_in, x_mask = create_prev(x_out, vocab_src.stoi[config["sos"]], vocab_src.stoi[config["pad"]])
+                x_in, _, x_mask, x_len = create_batch(sentences_x, vocab_src, device)
+                x_mask = x_mask.unsqueeze(1)
+            else:
+                x_in, _, x_mask, x_len = create_batch(sentences_y, vocab_src, device)
+                x_mask = x_mask.unsqueeze(1)
 
             qz = model.inference(x_in, x_mask)
             z = qz.mean
@@ -53,14 +55,19 @@ def validate(model, dataset_dev, vocab_src, vocab_tgt, epoch, config, direction=
             dec_hidden = model.init_decoder(enc_output, enc_hidden, z)
 
             raw_hypothesis = beam_search(model.decoder, model.emb_tgt,
-                model.generate_tm, enc_output, dec_hidden, x_mask, len(vocab_tgt),
-                vocab_tgt.stoi[config["sos"]], vocab_tgt.stoi[config["eos"]],
-                vocab_tgt.stoi[config["pad"]], config)
+                model.generate_tm, enc_output, dec_hidden, x_mask, vocab_tgt.size(),
+                vocab_tgt[SOS_TOKEN], vocab_tgt[EOS_TOKEN],
+                vocab_tgt[PAD_TOKEN], config)
 
-            model_hypotheses += vocab_tgt.arrays_to_sentences(raw_hypothesis)
-            references += vocab_tgt.arrays_to_sentences(y_out)
+            hypothesis = batch_to_sentences(raw_hypothesis, vocab_tgt)
+            model_hypotheses += hypothesis.tolist()
+
+            if direction == None or direction == "xy":
+                references += sentences_y.tolist()
+            else:
+                references += sentences_x.tolist()
 
         model_hypotheses, references = clean_sentences(model_hypotheses, references, config)
-        save_hypotheses(model_hypotheses, epoch, config, direction)
+        save_hypotheses(model_hypotheses, epoch, config)
         bleu = compute_bleu(model_hypotheses, references, epoch, config)
         return bleu

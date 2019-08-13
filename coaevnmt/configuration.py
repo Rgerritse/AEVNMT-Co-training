@@ -17,7 +17,7 @@ def get_default_config():
 
         # Vocab
         # "vocab_prefix": (str, "aevnmt_vocab", False, "Vocab prefix, expect files with src/tgt suffixes."),
-        "vocab_prefix": (str, "vocab", False, "Vocab prefix, expect files with src/tgt suffixes."),
+        "vocab_prefix": (str, "vocab_new", False, "Vocab prefix, expect files with src/tgt suffixes."),
         "sos": (str, "<s>", False, "Start-of-sentence symbol."),
         "eos": (str, "</s>", False, "End-of-sentence symbol."),
         "pad": (str, "<pad>", False, "Padding symbol."),
