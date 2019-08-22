@@ -133,14 +133,14 @@ def save_hypotheses(hypotheses, epoch, config, direction=None):
     file = '{}/{}-{:03d}'.format(hypotheses_path, config["session"], epoch)
     if not direction is None:
         file += "-" + direction
-    file += "." + config["tgt"]
+    # file += "." + config["tgt"]
     # print(hypotheses)
     with open(file, 'a') as the_file:
        for sent in hypotheses:
            # print(sent)
            the_file.write(sent + '\n')
 
-def compute_bleu(hypotheses, references, epoch, config):
+def compute_bleu(hypotheses, references, epoch, config, direction):
     bleu = sacrebleu.raw_corpus_bleu(hypotheses, [references]).score
     # file = '{}/{}/{}-{:03d}.{}'.format(config["out_dir"], config["predictions_dir"], config["session"], epoch, config["tgt"])
     # ref = '{}/valid.detok.tr'.format(config["data_dir"])
@@ -148,7 +148,7 @@ def compute_bleu(hypotheses, references, epoch, config):
     # bleu = process.stdout.strip()
     scores = '{}/{}/bleu-scores.txt'.format(config["out_dir"], config["session"])
     with open(scores, 'a') as f_score:
-        f_score.write("Epoch: {}, Bleu {}\n".format(epoch, bleu))
+        f_score.write("Epoch: {}, Bleu {}, Direction {}\n".format(epoch, bleu, direction))
     return bleu
 
     # file_name = '{}/{}/{}-{:03d}.raw.{}'.format(config["out_dir"], config["predictions_dir"], config["session"], epoch, config["tgt"])

@@ -6,6 +6,7 @@ from torch.distributions.categorical import Categorical
 import numpy as np
 from modules.utils import tile_rnn_hidden
 from data_prep import PAD_TOKEN, SOS_TOKEN, EOS_TOKEN
+from itertools import chain
 
 class AEVNMT(nn.Module):
     def __init__(self, vocab_src, vocab_tgt, inference_model, encoder, decoder, language_model, config):
@@ -34,6 +35,27 @@ class AEVNMT(nn.Module):
 
         self.register_buffer("prior_loc", torch.zeros([config["latent_size"]]))
         self.register_buffer("prior_scale", torch.ones([config["latent_size"]]))
+
+    def inference_parameters(self):
+        return self.inference_model.parameters()
+
+    def generative_parameters(self):
+        return chain(self.lm_parameters(), self.tm_parameters())
+
+    def lm_parameters(self):
+        return chain(self.language_model.parameters(), self.lm_init_layer.parameters())
+
+    def tm_parameters(self):
+        params = chain(self.encoder.parameters(),
+                     self.decoder.parameters(),
+                     self.emb_tgt.parameters(),
+                     self.enc_init_layer.parameters(),
+                     self.dec_init_layer.parameters())
+        if not self.config["tied_embeddings"]:
+            params = chain(params,
+                self.tm_logits_matrix.parameters(),
+                self.lm_logits_matrix.parameters())
+        return params
 
     def src_embed(self, x):
         x_embed = self.emb_src(x)
@@ -110,18 +132,22 @@ class AEVNMT(nn.Module):
     # Change this with ancestral_sample
     def sample(self, enc_output, y_mask, dec_hidden):
         batch_size = y_mask.size(0)
-        prev = y_mask.new_full(size=[batch_size, 1], fill_value=self.vocab_tgt[SOS_TOKEN],
+        prev = y_mask.new_full(size=[batch_size], fill_value=self.vocab_tgt[SOS_TOKEN],
             dtype=torch.long)
 
         output = []
         for t in range(self.config["max_len"]):
             embed = self.emb_tgt(prev)
+            # print("embed: ", embed.shape)
+            # print("enc_output: ", enc_output.shape)
+            # print("y_mask: ", y_mask.shape)
+            # print("dec_hidden: ", dec_hidden[0].shape)
             pre_output, dec_hidden = self.decoder.forward_step(embed, enc_output, y_mask, dec_hidden)
             logits = self.generate_tm(pre_output)
             categorical = Categorical(logits=logits)
             next_word = categorical.sample()
             output.append(next_word.squeeze(1).cpu().numpy())
-            prev = next_word
+            prev = next_word.squeeze(1)
             stacked_output = np.stack(output, axis=1)  # batch, time
         return stacked_output
 

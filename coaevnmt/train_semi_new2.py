@@ -14,7 +14,7 @@ from data_prep import create_batch, BucketingParallelDataLoader, BucketingTextDa
 from data_prep.constants import UNK_TOKEN, PAD_TOKEN, SOS_TOKEN, EOS_TOKEN
 from itertools import cycle
 from data_prep.utils import create_noisy_batch
-from opt_utils import RequiresGradSwitch
+from opt_utils import RequiresGradSwitch, create_optimizers, optimizer_step, scheduler_step
 
 def create_models(vocab_src, vocab_tgt, config):
     if config["model_type"] == "coaevnmt":
@@ -29,14 +29,7 @@ def create_models(vocab_src, vocab_tgt, config):
     print("Model yx: ", model_yx)
     return model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn
 
-def optimizer_step(parameters, optimizer, max_gradient_norm):
-    if max_gradient_norm > 0:
-        clip_grad_norm_(parameters, max_gradient_norm, norm_type=float("inf"))
-
-    optimizer.step()
-    optimizer.zero_grad()
-
-def monolingual_step(model_xy, model_yx, cycle_iterate_dl, mono_train_fn, opt, vocab_src, vocab_tgt, config, step, device):
+def monolingual_step(model_xy, model_yx, cycle_iterate_dl, mono_train_fn, optimizers, vocab_src, vocab_tgt, config, step, device):
     lm_switch = RequiresGradSwitch(model_xy.lm_parameters())
     if not config["update_lm"]:
         lm_switch.requires_grad(False)
@@ -48,7 +41,8 @@ def monolingual_step(model_xy, model_yx, cycle_iterate_dl, mono_train_fn, opt, v
     y_mono_loss = mono_train_fn(model_xy, model_yx, y_in, y_mask, y_out, vocab_src, config, step)
     y_mono_loss.backward()
 
-    optimizer_step(model_xy.parameters(), opt, config["max_gradient_norm"])
+    optimizer_step(model_xy.generative_parameters(), optimizers['gen'], config["max_gradient_norm"])
+    optimizer_step(model_xy.inference_parameters(), optimizers['inf'], config["max_gradient_norm"])
 
     if not config["update_lm"]:  # so we restore switches for source LM
         lm_switch.restore()
@@ -59,8 +53,20 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, bucketing
 
     print("Training...")
 
-    opt_xy, sched_xy = create_optimizer(model_xy.parameters(), config)
-    opt_yx, sched_yx = create_optimizer(model_yx.parameters(), config)
+    # opt_xy, sched_xy = create_optimizer(model_xy.parameters(), config)
+    # opt_yx, sched_yx = create_optimizer(model_yx.parameters(), config)
+
+    optimizers_xy, schedulers_xy = create_optimizers(
+        model_xy.generative_parameters(),
+        model_xy.inference_parameters(),
+        config
+    )
+
+    optimizers_yx, schedulers_yx = create_optimizers(
+        model_yx.generative_parameters(),
+        model_yx.inference_parameters(),
+        config
+    )
 
     saved_epoch = 0
     patience_counter = 0
@@ -76,10 +82,10 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, bucketing
             max_bleu = state['max_bleu']
             model_xy.load_state_dict(state['state_dict_xy'])
             model_yx.load_state_dict(state['state_dict_yx'])
-            opt_xy.load_state_dict(state['optimizer_xy'])
-            opt_yx.load_state_dict(state['optimizer_yx'])
-            sched_xy.load_state_dict(state['scheduler_xy'])
-            sched_yx.load_state_dict(state['scheduler_yx'])
+            optimizers_xy.load_state_dict(state['optimizers_xy'])
+            optimizers_yx.load_state_dict(state['optimizers_yx'])
+            schedulers_xy.load_state_dict(state['schedulers_xy'])
+            schedulers_yx.load_state_dict(state['schedulers_yx'])
         else:
             init_model(model_xy, vocab_src[PAD_TOKEN], vocab_tgt[PAD_TOKEN], config)
             init_model(model_yx, vocab_tgt[PAD_TOKEN], vocab_src[PAD_TOKEN], config)
@@ -93,6 +99,19 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, bucketing
             model_xy.train()
             model_yx.train()
 
+            # Reset optimizers after bilingual warmup
+            if epoch == config["bilingual_warmup"]:
+                optimizers_xy, schedulers_xy = create_optimizers(
+                    model_xy.generative_parameters(),
+                    model_xy.inference_parameters(),
+                    config
+                )
+
+                optimizers_yx, schedulers_yx = create_optimizers(
+                    model_yx.generative_parameters(),
+                    model_yx.inference_parameters(),
+                    config
+                )
 
             x_in, x_out, x_mask, x_len, x_noisy_in = create_noisy_batch(
                 sentences_x, vocab_src, device, word_dropout=config["word_dropout"])
@@ -103,54 +122,53 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, bucketing
             y_mask = y_mask.unsqueeze(1)
 
 
-            opt_xy.zero_grad()
-            opt_yx.zero_grad()
+            # opt_xy.zero_grad()
+            # opt_yx.zero_grad()
 
             # Bilingual loss
             bi_loss = bi_train_fn(model_xy, model_yx, x_in, x_noisy_in, x_out, x_mask, y_in, y_noisy_in, y_out, y_mask, step)
             bi_loss.backward()
 
-            optimizer_step(model_xy.parameters(), opt_xy, config["max_gradient_norm"])
-            optimizer_step(model_yx.parameters(), opt_yx, config["max_gradient_norm"])
+            optimizer_step(model_xy.generative_parameters(), optimizers_xy['gen'], config["max_gradient_norm"])
+            optimizer_step(model_xy.inference_parameters(), optimizers_xy['inf'], config["max_gradient_norm"])
+            optimizer_step(model_yx.generative_parameters(), optimizers_yx['gen'], config["max_gradient_norm"])
+            optimizer_step(model_yx.inference_parameters(), optimizers_yx['inf'],  config["max_gradient_norm"])
 
             print_string = "Epoch: {:03d}/{:03d}, Batch {:05d}/{:05d}, Bi-Loss: {:.2f}".format(
                 epoch + 1,
                 config["num_epochs"],
                 step + 1,
                 len(bucketing_dl_xy.dataloader),
-                bi_loss.item())
+                bi_loss.item()
+            )
 
             # Monolingual loss
             if epoch >= config["bilingual_warmup"]:
-                y_mono_loss = monolingual_step(model_xy, model_yx, cycle_iterate_dl_y, mono_train_fn, opt_xy, vocab_src, vocab_tgt, config, step, device)
-                x_mono_loss = monolingual_step(model_yx, model_xy, cycle_iterate_dl_x, mono_train_fn, opt_yx, vocab_tgt, vocab_src, config, step, device)
-                # Monolingual y batch
+                y_mono_loss = monolingual_step(
+                    model_xy,
+                    model_yx,
+                    cycle_iterate_dl_y,
+                    mono_train_fn,
+                    optimizers_xy,
+                    vocab_src,
+                    vocab_tgt,
+                    config,
+                    step,
+                    device
+                )
 
-                # lm_switch_xy = RequiresGradSwitch(model_xy.lm_parameters())
-                # if not config["update_lm"]:
-                #     lm_switch_xy.requires_grad(False)
-                #
-                # sentences_y = next(cycle_iterate_dl_y)
-                # y_in, y_out, y_mask, _ = create_batch(sentences_y, vocab_tgt, device)
-                # y_mask = y_mask.unsqueeze(1)
-                #
-                # y_mono_loss = mono_train_fn(model_xy, model_yx, y_in, y_mask, y_out, vocab_src, config, step)
-                # y_mono_loss.backward()
-                #
-                # optimizer_step(model_xy.parameters(), opt_xy, config["max_gradient_norm"])
-
-                # if not config["update_lm"]:  # so we restore switches for source LM
-                #     lm_switch_xy.restore()
-                #
-                # # Monolingual x batch
-                # sentences_x = next(cycle_iterate_dl_x)
-                # x_in, x_out, x_mask, _ = create_batch(sentences_x, vocab_src, device)
-                # x_mask = x_mask.unsqueeze(1)
-                #
-                # x_mono_loss = mono_train_fn(model_yx, model_xy, x_in, x_mask, x_out, vocab_tgt, config, step)
-                # x_mono_loss.backward()
-                #
-                # optimizer_step(model_yx.parameters(), opt_yx, config["max_gradient_norm"])
+                x_mono_loss = monolingual_step(
+                    model_yx,
+                    model_xy,
+                    cycle_iterate_dl_x,
+                    mono_train_fn,
+                    optimizers_yx,
+                    vocab_tgt,
+                    vocab_src,
+                    config,
+                    step,
+                    device
+                )
 
                 print_string += ", Y-Loss: {:.2f}, X-Loss: {:.2f}".format(y_mono_loss.item(), x_mono_loss.item())
             print(print_string)
@@ -158,8 +176,8 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, bucketing
         val_bleu_xy = evaluate(model_xy, validate_fn, dev_data, vocab_src, vocab_tgt, epoch, config, direction="xy")
         val_bleu_yx = evaluate(model_yx, validate_fn, dev_data, vocab_tgt, vocab_src, epoch, config, direction="yx")
 
-        sched_xy.step(float(val_bleu_xy))
-        sched_yx.step(float(val_bleu_yx))
+        scheduler_step(schedulers_xy, val_bleu_xy)
+        scheduler_step(schedulers_yx, val_bleu_xy)
 
         print("Blue scores: {}-{}: {}, {}-{}: {}".format(config["src"], config["tgt"], val_bleu_xy, config["tgt"], config["src"], val_bleu_yx))
         if float(val_bleu_xy * val_bleu_yx) > max_bleu:
@@ -175,13 +193,12 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, bucketing
                 'max_bleu': max_bleu,
                 'state_dict_xy': model_xy.state_dict(),
                 'state_dict_yx': model_yx.state_dict(),
-                'optimizer_xy': opt_xy.state_dict(),
-                'optimizer_yx': opt_yx.state_dict(),
-                'scheduler_xy': sched_xy.state_dict(),
-                'scheduler_yx': sched_yx.state_dict()
+                'optimizers_xy': optimizers_xy.state_dict(),
+                'optimizers_yx': optimizers_yx.state_dict(),
+                'schedulers_xy': schedulers_xy.state_dict(),
+                'schedulers_yx': schedulers_yx.state_dict()
             }
             torch.save(state, '{}/{}'.format(checkpoints_path, config["session"]))
-
         else:
             patience_counter += 1
             if patience_counter >= config["patience"]:
@@ -237,8 +254,20 @@ def main():
 
     # train(model, train_fn, validate_fn, bucketing_dl, dev_data, vocab_src, vocab_tgt, config)
 
-    train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, bucketing_dl_xy,
-        dev_data, cycle_iterate_dl_x, cycle_iterate_dl_y, vocab_src, vocab_tgt, config)
+    train(
+        model_xy,
+        model_yx,
+        bi_train_fn,
+        mono_train_fn,
+        validate_fn,
+        bucketing_dl_xy,
+        dev_data,
+        cycle_iterate_dl_x,
+        cycle_iterate_dl_y,
+        vocab_src,
+        vocab_tgt,
+        config
+    )
 
 if __name__ == '__main__':
     main()

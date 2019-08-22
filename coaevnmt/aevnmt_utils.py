@@ -68,6 +68,6 @@ def validate(model, dev_data, vocab_src, vocab_tgt, epoch, config, direction=Non
                 references += sentences_x.tolist()
 
         model_hypotheses, references = clean_sentences(model_hypotheses, references, config)
-        save_hypotheses(model_hypotheses, epoch, config)
-        bleu = compute_bleu(model_hypotheses, references, epoch, config)
+        save_hypotheses(model_hypotheses, epoch, config, direction)
+        bleu = compute_bleu(model_hypotheses, references, epoch, config, direction)
         return bleu

@@ -6,7 +6,7 @@
     "rnn_type": "lstm",
     "dropout": 0.5,
     "emb_size": 256,
-    "greedy_sampling": true,
+    "greedy_sampling": false,
     "hidden_size": 256,
     "kl_free_nats": 10,
     "kl_annealing_steps": 0,
@@ -29,6 +29,6 @@
     "subword_token": "@@",
     "tied_embeddings": true,
     "tgt": "de",
-    "update_lm": false,
+    "update_lm": true,
     "word_dropout": 0.1
 }

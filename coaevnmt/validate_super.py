@@ -13,6 +13,7 @@ from data_prep.constants import UNK_TOKEN, PAD_TOKEN, SOS_TOKEN, EOS_TOKEN
 
 def main():
     config = setup_config()
+    config["dev_prefix"] = "test"
     vocab_src, vocab_tgt = load_vocabularies(config)
     _, dev_data, _ = load_data(config, vocab_src=vocab_src, vocab_tgt=vocab_tgt)
 
@@ -22,7 +23,7 @@ def main():
 
     # checkpoint_path = "output/aevnmt_word_dropout_0.1/checkpoints/aevnmt_word_dropout_0.1"
     # checkpoint_path = "output/aevnmt_params_de-en/checkpoints/aevnmt_params_de-en"
-    checkpoint_path = "output/aevnmt_new_kl_10_wd_0.1/checkpoints/aevnmt_new_kl_10_wd_0.1"
+    checkpoint_path = "output/cond_nmt_new_de-en_run_5/checkpoints/cond_nmt_new_de-en_run_5"
     state = torch.load(checkpoint_path)
     model.load_state_dict(state['state_dict'])
 
@@ -39,16 +40,27 @@ def main():
             x_in, _, x_mask, x_len = create_batch(sentences_x, vocab_src, device)
             x_mask = x_mask.unsqueeze(1)
 
-            qz = model.inference(x_in, x_mask)
-            z = qz.mean
+            if config["model_type"] == "aevnmt":
+                qz = model.inference(x_in, x_mask)
+                z = qz.mean
 
-            enc_output, enc_hidden = model.encode(x_in, z)
-            dec_hidden = model.init_decoder(enc_output, enc_hidden, z)
+                enc_output, enc_hidden = model.encode(x_in, z)
+                dec_hidden = model.init_decoder(enc_output, enc_hidden, z)
 
-            raw_hypothesis = beam_search(model.decoder, model.emb_tgt,
-                model.generate_tm, enc_output, dec_hidden, x_mask, vocab_tgt.size(),
-                vocab_tgt[SOS_TOKEN], vocab_tgt[EOS_TOKEN],
-                vocab_tgt[PAD_TOKEN], config)
+                raw_hypothesis = beam_search(model.decoder, model.emb_tgt,
+                    model.generate_tm, enc_output, dec_hidden, x_mask, vocab_tgt.size(),
+                    vocab_tgt[SOS_TOKEN], vocab_tgt[EOS_TOKEN],
+                    vocab_tgt[PAD_TOKEN], config)
+            else:
+                enc_output, enc_hidden = model.encode(x_in)
+                dec_hidden = model.decoder.initialize(enc_output, enc_hidden)
+
+                raw_hypothesis = beam_search(model.decoder, model.emb_tgt,
+                    model.generate, enc_output, dec_hidden, x_mask, vocab_tgt.size(),
+                    vocab_tgt[SOS_TOKEN], vocab_tgt[EOS_TOKEN],
+                    vocab_tgt[PAD_TOKEN], config)
+
+
 
             hypothesis = batch_to_sentences(raw_hypothesis, vocab_tgt)
             model_hypotheses += hypothesis.tolist()

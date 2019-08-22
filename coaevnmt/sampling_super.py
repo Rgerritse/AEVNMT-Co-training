@@ -12,6 +12,7 @@ from data_prep.constants import UNK_TOKEN, PAD_TOKEN, SOS_TOKEN, EOS_TOKEN
 from torch.utils.data import DataLoader
 from data_prep import BucketingParallelDataLoader, create_batch, batch_to_sentences
 import numpy as np
+
 def sample_from_latent(model, vocab_src, vocab_tgt, config):
     num_samples = 5
 
