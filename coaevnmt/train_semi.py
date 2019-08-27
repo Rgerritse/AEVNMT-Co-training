@@ -253,11 +253,11 @@ def main():
                     shuffle=True, num_workers=4)
     bucketing_dl_xy = BucketingParallelDataLoader(dl_xy)
 
-    dl_x = DataLoader(dataset=opt_data['mono_src'], batch_size=config["batch_size_train"], shuffle=True, num_workers=4)
+    dl_x = DataLoader(dataset=opt_data['mono_src'], batch_size=config["batch_size_train"], shuffle=True, num_workers=2)
     bucketing_dl_x = BucketingTextDataLoader(dl_x)
     cycle_iterate_dl_x = cycle(bucketing_dl_x)
 
-    dl_y = DataLoader(dataset=opt_data['mono_tgt'], batch_size=config["batch_size_train"], shuffle=True, num_workers=4)
+    dl_y = DataLoader(dataset=opt_data['mono_tgt'], batch_size=config["batch_size_train"], shuffle=True, num_workers=2)
     bucketing_dl_y = BucketingTextDataLoader(dl_y)
     cycle_iterate_dl_y = cycle(bucketing_dl_y)
 
