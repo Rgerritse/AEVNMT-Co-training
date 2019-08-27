@@ -37,27 +37,19 @@ def validate(model, dev_data, vocab_src, vocab_tgt, epoch, config):
             x_in, _, x_mask, x_len = create_batch(sentences_x, vocab_src, device)
             x_mask = x_mask.unsqueeze(1)
 
-            enc_output, enc_hidden = model.encode(x_in)
+            enc_output, enc_hidden = model.encode(x_in, x_len)
             dec_hidden = model.decoder.initialize(enc_output, enc_hidden)
 
             raw_hypothesis = beam_search(model.decoder, model.emb_tgt,
                 model.generate, enc_output, dec_hidden, x_mask, vocab_tgt.size(),
                 vocab_tgt[SOS_TOKEN], vocab_tgt[EOS_TOKEN],
                 vocab_tgt[PAD_TOKEN], config)
-            # raw_hypothesis = beam_search(model.decoder, model.emb_tgt,
-            #     model.generate, enc_output, dec_hidden, x_mask, len(vocab_tgt),
-            #     vocab_tgt.stoi[config["sos"]], vocab_tgt.stoi[config["eos"]],
-            #     vocab_tgt.stoi[config["pad"]], config)
+
             hypothesis = batch_to_sentences(raw_hypothesis, vocab_tgt)
             model_hypotheses += hypothesis.tolist()
-            # model_hypotheses += vocab_tgt.arrays_to_sentences(raw_hypothesis)
-            # model_hypotheses += vocab_tgt.arrays_to_sentences(raw_hypothesis)
-            # references += vocab_tgt.arrays_to_sentences(y_out)
             references += sentences_y.tolist()
-            # print(model_hypotheses)
-            # asd
 
-        model_hypotheses, references = clean_sentences(model_hypotheses, references, config)
         save_hypotheses(model_hypotheses, epoch, config)
-        bleu = compute_bleu(model_hypotheses, references, epoch, config)
+        model_hypotheses, references = clean_sentences(model_hypotheses, references, config)
+        bleu = compute_bleu(model_hypotheses, references, epoch, config, None)
         return bleu

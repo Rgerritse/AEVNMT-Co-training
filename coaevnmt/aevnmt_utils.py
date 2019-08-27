@@ -38,7 +38,7 @@ def validate(model, dev_data, vocab_src, vocab_tgt, epoch, config, direction=Non
         references = []
 
         val_dl = DataLoader(dev_data, batch_size=config["batch_size_eval"],
-                        shuffle=False, num_workers=4)
+                        shuffle=False, num_workers=2)
         val_dl = BucketingParallelDataLoader(val_dl)
         for sentences_x, sentences_y in val_dl:
             if direction == None or direction == "xy":
@@ -67,7 +67,7 @@ def validate(model, dev_data, vocab_src, vocab_tgt, epoch, config, direction=Non
             else:
                 references += sentences_x.tolist()
 
-        model_hypotheses, references = clean_sentences(model_hypotheses, references, config)
         save_hypotheses(model_hypotheses, epoch, config, direction)
+        model_hypotheses, references = clean_sentences(model_hypotheses, references, config)
         bleu = compute_bleu(model_hypotheses, references, epoch, config, direction)
         return bleu

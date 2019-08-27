@@ -29,6 +29,26 @@ def create_models(vocab_src, vocab_tgt, config):
     print("Model yx: ", model_yx)
     return model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn
 
+def bilingual_step(model_xy, model_yx, sentences_x, sentences_y, bi_train_fn, optimizers_xy, optimizers_yx, vocab_src, vocab_tgt, config, step, device):
+    x_in, x_out, x_mask, x_len, x_noisy_in = create_noisy_batch(
+        sentences_x, vocab_src, device, word_dropout=config["word_dropout"])
+    y_in, y_out, y_mask, y_len, y_noisy_in = create_noisy_batch(
+        sentences_y, vocab_tgt, device, word_dropout=config["word_dropout"])
+
+    x_mask = x_mask.unsqueeze(1)
+    y_mask = y_mask.unsqueeze(1)
+
+    # Bilingual loss
+    bi_loss = bi_train_fn(model_xy, model_yx, x_in, x_noisy_in, x_out, x_mask, y_in, y_noisy_in, y_out, y_mask, step)
+    bi_loss.backward()
+
+    optimizer_step(model_xy.generative_parameters(), optimizers_xy['gen'], config["max_gradient_norm"])
+    optimizer_step(model_xy.inference_parameters(), optimizers_xy['inf'], config["max_gradient_norm"])
+    optimizer_step(model_yx.generative_parameters(), optimizers_yx['gen'], config["max_gradient_norm"])
+    optimizer_step(model_yx.inference_parameters(), optimizers_yx['inf'],  config["max_gradient_norm"])
+
+    return bi_loss.item()
+
 def monolingual_step(model_xy, model_yx, cycle_iterate_dl, mono_train_fn, optimizers, vocab_src, vocab_tgt, config, step, device):
     lm_switch = RequiresGradSwitch(model_xy.lm_parameters())
     if not config["update_lm"]:
@@ -46,15 +66,13 @@ def monolingual_step(model_xy, model_yx, cycle_iterate_dl, mono_train_fn, optimi
 
     if not config["update_lm"]:  # so we restore switches for source LM
         lm_switch.restore()
-    return y_mono_loss
+    return y_mono_loss.item()
 
 def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, bucketing_dl_xy,
     dev_data, cycle_iterate_dl_x, cycle_iterate_dl_y, vocab_src, vocab_tgt, config):
 
     print("Training...")
 
-    # opt_xy, sched_xy = create_optimizer(model_xy.parameters(), config)
-    # opt_yx, sched_yx = create_optimizer(model_yx.parameters(), config)
 
     optimizers_xy, schedulers_xy = create_optimizers(
         model_xy.generative_parameters(),
@@ -82,10 +100,14 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, bucketing
             max_bleu = state['max_bleu']
             model_xy.load_state_dict(state['state_dict_xy'])
             model_yx.load_state_dict(state['state_dict_yx'])
-            optimizers_xy.load_state_dict(state['optimizers_xy'])
-            optimizers_yx.load_state_dict(state['optimizers_yx'])
-            schedulers_xy.load_state_dict(state['schedulers_xy'])
-            schedulers_yx.load_state_dict(state['schedulers_yx'])
+            optimizers_xy["gen"].load_state_dict(state['optimizer_xy_gen'])
+            optimizers_yx["gen"].load_state_dict(state['optimizer_yx_gen'])
+            optimizers_xy["inf"].load_state_dict(state['optimizer_xy_inf'])
+            optimizers_yx["inf"].load_state_dict(state['optimizer_yx_inf'])
+            schedulers_xy["gen"].load_state_dict(state['scheduler_xy_gen'])
+            schedulers_yx["gen"].load_state_dict(state['scheduler_yx_gen'])
+            schedulers_xy["inf"].load_state_dict(state['scheduler_xy_inf'])
+            schedulers_yx["inf"].load_state_dict(state['scheduler_yx_inf'])
         else:
             init_model(model_xy, vocab_src[PAD_TOKEN], vocab_tgt[PAD_TOKEN], config)
             init_model(model_yx, vocab_tgt[PAD_TOKEN], vocab_src[PAD_TOKEN], config)
@@ -100,7 +122,7 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, bucketing
             model_yx.train()
 
             # Reset optimizers after bilingual warmup
-            if epoch == config["bilingual_warmup"]:
+            if epoch == config["bilingual_warmup"] and config["reset_opt"]:
                 optimizers_xy, schedulers_xy = create_optimizers(
                     model_xy.generative_parameters(),
                     model_xy.inference_parameters(),
@@ -113,33 +135,27 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, bucketing
                     config
                 )
 
-            x_in, x_out, x_mask, x_len, x_noisy_in = create_noisy_batch(
-                sentences_x, vocab_src, device, word_dropout=config["word_dropout"])
-            y_in, y_out, y_mask, y_len, y_noisy_in = create_noisy_batch(
-                sentences_y, vocab_tgt, device, word_dropout=config["word_dropout"])
-
-            x_mask = x_mask.unsqueeze(1)
-            y_mask = y_mask.unsqueeze(1)
-
-
-            # opt_xy.zero_grad()
-            # opt_yx.zero_grad()
-
-            # Bilingual loss
-            bi_loss = bi_train_fn(model_xy, model_yx, x_in, x_noisy_in, x_out, x_mask, y_in, y_noisy_in, y_out, y_mask, step)
-            bi_loss.backward()
-
-            optimizer_step(model_xy.generative_parameters(), optimizers_xy['gen'], config["max_gradient_norm"])
-            optimizer_step(model_xy.inference_parameters(), optimizers_xy['inf'], config["max_gradient_norm"])
-            optimizer_step(model_yx.generative_parameters(), optimizers_yx['gen'], config["max_gradient_norm"])
-            optimizer_step(model_yx.inference_parameters(), optimizers_yx['inf'],  config["max_gradient_norm"])
+            bi_loss = bilingual_step(
+                model_xy,
+                model_yx,
+                sentences_x,
+                sentences_y,
+                bi_train_fn,
+                optimizers_xy,
+                optimizers_yx,
+                vocab_src,
+                vocab_tgt,
+                config,
+                step,
+                device
+            )
 
             print_string = "Epoch: {:03d}/{:03d}, Batch {:05d}/{:05d}, Bi-Loss: {:.2f}".format(
                 epoch + 1,
                 config["num_epochs"],
                 step + 1,
                 len(bucketing_dl_xy.dataloader),
-                bi_loss.item()
+                bi_loss
             )
 
             # Monolingual loss
@@ -170,39 +186,45 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, bucketing
                     device
                 )
 
-                print_string += ", Y-Loss: {:.2f}, X-Loss: {:.2f}".format(y_mono_loss.item(), x_mono_loss.item())
+                print_string += ", Y-Loss: {:.2f}, X-Loss: {:.2f}".format(y_mono_loss, x_mono_loss)
             print(print_string)
 
         val_bleu_xy = evaluate(model_xy, validate_fn, dev_data, vocab_src, vocab_tgt, epoch, config, direction="xy")
         val_bleu_yx = evaluate(model_yx, validate_fn, dev_data, vocab_tgt, vocab_src, epoch, config, direction="yx")
 
         scheduler_step(schedulers_xy, val_bleu_xy)
-        scheduler_step(schedulers_yx, val_bleu_xy)
+        scheduler_step(schedulers_yx, val_bleu_yx)
 
         print("Blue scores: {}-{}: {}, {}-{}: {}".format(config["src"], config["tgt"], val_bleu_xy, config["tgt"], config["src"], val_bleu_yx))
-        if float(val_bleu_xy * val_bleu_yx) > max_bleu:
-            max_bleu = float(val_bleu_xy * val_bleu_yx)
-            patience_counter = 0
 
-            # Save checkpoint
-            if not os.path.exists(checkpoints_path):
-                os.makedirs(checkpoints_path)
-            state = {
-                'epoch': epoch + 1,
-                'patience_counter': patience_counter,
-                'max_bleu': max_bleu,
-                'state_dict_xy': model_xy.state_dict(),
-                'state_dict_yx': model_yx.state_dict(),
-                'optimizers_xy': optimizers_xy.state_dict(),
-                'optimizers_yx': optimizers_yx.state_dict(),
-                'schedulers_xy': schedulers_xy.state_dict(),
-                'schedulers_yx': schedulers_yx.state_dict()
-            }
-            torch.save(state, '{}/{}'.format(checkpoints_path, config["session"]))
-        else:
-            patience_counter += 1
-            if patience_counter >= config["patience"]:
-                break
+        if epoch >= config["bilingual_warmup"]:
+            if float(val_bleu_xy * val_bleu_yx) > max_bleu:
+                max_bleu = float(val_bleu_xy * val_bleu_yx)
+                patience_counter = 0
+
+                # Save checkpoint
+                if not os.path.exists(checkpoints_path):
+                    os.makedirs(checkpoints_path)
+                state = {
+                    'epoch': epoch + 1,
+                    'patience_counter': patience_counter,
+                    'max_bleu': max_bleu,
+                    'state_dict_xy': model_xy.state_dict(),
+                    'state_dict_yx': model_yx.state_dict(),
+                    'optimizer_xy_gen': optimizers_xy["gen"].state_dict(),
+                    'optimizer_yx_gen': optimizers_yx["gen"].state_dict(),
+                    'optimizer_xy_inf': optimizers_xy["inf"].state_dict(),
+                    'optimizer_yx_inf': optimizers_yx["inf"].state_dict(),
+                    'scheduler_xy_gen': schedulers_xy["gen"].state_dict(),
+                    'scheduler_yx_gen': schedulers_yx["gen"].state_dict(),
+                    'scheduler_xy_inf': schedulers_xy["inf"].state_dict(),
+                    'scheduler_yx_inf': schedulers_yx["inf"].state_dict()
+                }
+                torch.save(state, '{}/{}'.format(checkpoints_path, config["session"]))
+            else:
+                patience_counter += 1
+                if patience_counter >= config["patience"]:
+                    break
 
 def evaluate(model, validate_fn, dataset_dev, vocab_src, vocab_tgt, epoch, config, direction="xy"):
     checkpoints_path = "{}/{}/checkpoints".format(config["out_dir"], config["session"])
@@ -238,21 +260,10 @@ def main():
     dl_y = DataLoader(dataset=opt_data['mono_tgt'], batch_size=config["batch_size_train"], shuffle=True, num_workers=4)
     bucketing_dl_y = BucketingTextDataLoader(dl_y)
     cycle_iterate_dl_y = cycle(bucketing_dl_y)
-    # train_data, dev_data, vocab_src, vocab_tgt = load_dataset_joey(config)
-    # train_src_mono, train_tgt_mono = load_mono_datasets(config, vocab_src, vocab_tgt)
-
-    # dataloader = data.make_data_iter(train_data, config["batch_size_train"], train=True)
-    # src_mono_buck = torchtext.data.BucketIterator(train_src_mono, batch_size=config["batch_size_train"], train=True)
-    # tgt_mono_buck = torchtext.data.BucketIterator(train_tgt_mono, batch_size=config["batch_size_train"], train=True)
 
     model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn = create_models(vocab_src, vocab_tgt, config)
     model_xy.to(torch.device(config["device"]))
     model_yx.to(torch.device(config["device"]))
-
-    # init_model(model_xy, vocab_src.stoi[config["pad"]], vocab_tgt.stoi[config["pad"]], config)
-    # init_model(model_yx, vocab_tgt.stoi[config["pad"]], vocab_src.stoi[config["pad"]], config)
-
-    # train(model, train_fn, validate_fn, bucketing_dl, dev_data, vocab_src, vocab_tgt, config)
 
     train(
         model_xy,

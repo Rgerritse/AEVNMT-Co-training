@@ -13,8 +13,11 @@ class Encoder(nn.Module):
         self.rnn = rnn_fn(config["hidden_size"], config["hidden_size"], batch_first=True, bidirectional=True, dropout=rnn_dropout, num_layers=config["num_enc_layers"])
         self.config = config
 
-    def forward(self, x, hidden=None):
-        output, hidden = self.rnn(x, hidden) # Maybe packed sequences
+    def forward(self, x, seq_len, hidden=None):
+        packed_seq = pack_padded_sequence(x, seq_len, batch_first=True)
+        output, hidden = self.rnn(packed_seq, hidden) # Maybe packed sequences
+        output, _ = pad_packed_sequence(output, batch_first=True)
+
 
         if self.config["rnn_type"] == "lstm":
             hidden = hidden[0]

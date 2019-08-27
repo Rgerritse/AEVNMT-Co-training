@@ -43,14 +43,19 @@ class AEVNMT(nn.Module):
         return chain(self.lm_parameters(), self.tm_parameters())
 
     def lm_parameters(self):
-        return chain(self.language_model.parameters(), self.lm_init_layer.parameters())
+        return chain(
+            self.language_model.parameters(),
+            self.lm_init_layer.parameters(),
+            self.emb_src.parameters()
+        )
 
     def tm_parameters(self):
         params = chain(self.encoder.parameters(),
                      self.decoder.parameters(),
                      self.emb_tgt.parameters(),
                      self.enc_init_layer.parameters(),
-                     self.dec_init_layer.parameters())
+                     self.dec_init_layer.parameters()
+                )
         if not self.config["tied_embeddings"]:
             params = chain(params,
                 self.tm_logits_matrix.parameters(),
@@ -72,11 +77,11 @@ class AEVNMT(nn.Module):
         loc, scale = self.inference_model(embed_x, x_mask)
         return Normal(loc=loc, scale=scale)
 
-    def encode(self, x, z):
+    def encode(self, x, x_len, z):
         embed_x = self.dropout(self.emb_src(x))
         hidden = torch.tanh(self.enc_init_layer(z))
         hidden = tile_rnn_hidden(hidden, self.encoder.rnn)
-        enc_output, enc_final = self.encoder(embed_x, hidden)
+        enc_output, enc_final = self.encoder(embed_x, x_len, hidden)
         return enc_output, enc_final
 
     def decode(self, y, enc_output, x_mask, dec_hidden):

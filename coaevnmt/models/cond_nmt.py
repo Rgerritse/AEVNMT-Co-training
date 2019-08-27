@@ -35,13 +35,13 @@ class CondNMT(nn.Module):
         W = self.emb_tgt.weight if self.config["tied_embeddings"] else self.output_matrix
         return F.linear(pre_output, W)
 
-    def encode(self, x):
+    def encode(self, x, x_len):
         x_embed =  self.src_embed(x)
-        enc_output, enc_final = self.encoder(x_embed)
+        enc_output, enc_final = self.encoder(x_embed, x_len)
         return enc_output, enc_final
 
     def forward(self, x, x_mask, x_len, y):
-        enc_output, enc_final = self.encode(x)
+        enc_output, enc_final = self.encode(x, x_len)
         dec_hidden = self.decoder.initialize(enc_output, enc_final)
 
         # Decode function

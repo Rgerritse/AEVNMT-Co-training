@@ -8,8 +8,8 @@ import sacrebleu
 import torch
 
 def load_vocabularies(config):
-    vocab_src_file = config["data_dir"] + "/" + config["vocab_prefix"] + "."+ config["src"]
-    vocab_tgt_file = config["data_dir"] + "/" + config["vocab_prefix"] + "."+ config["tgt"]
+    vocab_src_file = config["data_dir"] + "/" + config["vocab_prefix"] + "." + config["src"]
+    vocab_tgt_file = config["data_dir"] + "/" + config["vocab_prefix"] + "." + config["tgt"]
 
     vocab_src = Vocabulary.from_file(vocab_src_file, max_size=sys.maxsize)
     vocab_tgt = Vocabulary.from_file(vocab_tgt_file, max_size=sys.maxsize)
@@ -24,7 +24,6 @@ def load_data(config, vocab_src, vocab_tgt, use_memmap=False):
 
     training_data = ParallelDataset(train_src, train_tgt, max_length=config["max_len"])
     val_data = ParallelDataset(val_src, val_tgt, max_length=-1)
-
     if config["model_type"] == "coaevnmt":
         mono_src_path = "{}/{}.{}".format(config["data_dir"], config["mono_prefix"], config["src"])
         mono_tgt_path = "{}/{}.{}".format(config["data_dir"], config["mono_prefix"], config["tgt"])
@@ -133,38 +132,13 @@ def save_hypotheses(hypotheses, epoch, config, direction=None):
     file = '{}/{}-{:03d}'.format(hypotheses_path, config["session"], epoch)
     if not direction is None:
         file += "-" + direction
-    # file += "." + config["tgt"]
-    # print(hypotheses)
     with open(file, 'a') as the_file:
        for sent in hypotheses:
-           # print(sent)
            the_file.write(sent + '\n')
 
 def compute_bleu(hypotheses, references, epoch, config, direction):
     bleu = sacrebleu.raw_corpus_bleu(hypotheses, [references]).score
-    # file = '{}/{}/{}-{:03d}.{}'.format(config["out_dir"], config["predictions_dir"], config["session"], epoch, config["tgt"])
-    # ref = '{}/valid.detok.tr'.format(config["data_dir"])
-    # process = subprocess.run(['./scripts/evaluate.sh', file, ref], stdout=subprocess.PIPE)
-    # bleu = process.stdout.strip()
     scores = '{}/{}/bleu-scores.txt'.format(config["out_dir"], config["session"])
     with open(scores, 'a') as f_score:
         f_score.write("Epoch: {}, Bleu {}, Direction {}\n".format(epoch, bleu, direction))
     return bleu
-
-    # file_name = '{}/{}/{}-{:03d}.raw.{}'.format(config["out_dir"], config["predictions_dir"], config["session"], epoch, config["tgt"])
-    # with open(file_name, 'a') as the_file:
-    #    for sent in hypotheses:
-    #        the_file.write(' '.join(sent) + '\n')
-    # ref = "{}/{}.detok.{}".format(config["data_dir"], config["dev_prefix"], config["tgt"])
-    # sacrebleu = subprocess.run(['./scripts/evaluate.sh',
-    #     "{}/{}".format(config["out_dir"], config["predictions_dir"]),
-    #     config["session"],
-    #     '{:03d}'.format(epoch),
-    #     ref,
-    #     config["tgt"]],
-    #     stdout=subprocess.PIPE)
-    # bleu_score = sacrebleu.stdout.strip()
-    # scores_file = '{}/{}-scores.txt'.format(config["out_dir"], config["session"])
-    # with open(scores_file, 'a') as f_score:
-    #     f_score.write("Epoch: {}, Bleu {}\n".format(epoch, bleu_score))
-    # return bleu_score
