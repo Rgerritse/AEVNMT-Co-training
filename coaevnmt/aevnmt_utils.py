@@ -23,10 +23,10 @@ def create_model(vocab_src, vocab_tgt, config):
     return model
 
 def train_step(model, x_in, x_noisy_in, x_out, x_len, x_mask, y_in, y_noisy_in, y_out, step):
-    qz = model.inference(x_in, x_mask)
+    qz = model.inference(x_in, x_mask, x_len)
     z = qz.rsample()
 
-    tm_logits, lm_logits = model(x_noisy_in, x_mask, y_noisy_in, z)
+    tm_logits, lm_logits = model(x_noisy_in, x_len, x_mask, y_noisy_in, z)
     loss = model.loss(tm_logits, lm_logits, y_out, x_out, qz, step)
     return loss
 
@@ -48,10 +48,10 @@ def validate(model, dev_data, vocab_src, vocab_tgt, epoch, config, direction=Non
                 x_in, _, x_mask, x_len = create_batch(sentences_y, vocab_src, device)
                 x_mask = x_mask.unsqueeze(1)
 
-            qz = model.inference(x_in, x_mask)
+            qz = model.inference(x_in, x_mask, x_len)
             z = qz.mean
 
-            enc_output, enc_hidden = model.encode(x_in, z)
+            enc_output, enc_hidden = model.encode(x_in, x_len, z)
             dec_hidden = model.init_decoder(enc_output, enc_hidden, z)
 
             raw_hypothesis = beam_search(model.decoder, model.emb_tgt,

@@ -72,9 +72,9 @@ class AEVNMT(nn.Module):
         y_embed = self.dropout(y_embed)
         return y_embed
 
-    def inference(self, x, x_mask):
+    def inference(self, x, x_mask, x_len):
         embed_x = self.emb_src(x).detach()
-        loc, scale = self.inference_model(embed_x, x_mask)
+        loc, scale = self.inference_model(embed_x, x_mask, x_len)
         return Normal(loc=loc, scale=scale)
 
     def encode(self, x, x_len, z):
@@ -117,8 +117,8 @@ class AEVNMT(nn.Module):
             outputs.append(logits)
         return torch.cat(outputs, dim=1)
 
-    def forward(self, x, x_mask, y, z):
-        enc_output, enc_final = self.encode(x, z)
+    def forward(self, x, x_len, x_mask, y, z):
+        enc_output, enc_final = self.encode(x, x_len, z)
         dec_hidden = self.init_decoder(enc_output, enc_final, z)
 
         tm_outputs = []

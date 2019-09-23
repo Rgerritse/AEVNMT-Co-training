@@ -20,11 +20,11 @@
     "num_epochs": 100,
     "pass_enc_final": true,
     "patience": 10,
-    "src": "en",
+    "src": "de",
     "share_vocab": false,
     "subword_token": "@@",
-    "train_prefix": "training_de-en",
+    "train_prefix": "training_back_de-en",
     "tied_embeddings": true,
-    "tgt": "de",
+    "tgt": "en",
     "word_dropout": 0.0
 }

@@ -14,7 +14,7 @@ class Encoder(nn.Module):
         self.config = config
 
     def forward(self, x, seq_len, hidden=None):
-        packed_seq = pack_padded_sequence(x, seq_len, batch_first=True)
+        packed_seq = pack_padded_sequence(x, seq_len, batch_first=True, enforce_sorted=False)
         output, hidden = self.rnn(packed_seq, hidden) # Maybe packed sequences
         output, _ = pad_packed_sequence(output, batch_first=True)
 

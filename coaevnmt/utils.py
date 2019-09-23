@@ -24,11 +24,15 @@ def load_data(config, vocab_src, vocab_tgt, use_memmap=False):
 
     training_data = ParallelDataset(train_src, train_tgt, max_length=config["max_len"])
     val_data = ParallelDataset(val_src, val_tgt, max_length=-1)
-    if config["model_type"] == "coaevnmt":
+    if config["model_type"] == "conmt" or config["model_type"] == "coaevnmt":
         mono_src_path = "{}/{}.{}".format(config["data_dir"], config["mono_prefix"], config["src"])
         mono_tgt_path = "{}/{}.{}".format(config["data_dir"], config["mono_prefix"], config["tgt"])
         opt_data['mono_src'] = TextDataset(mono_src_path, max_length=config["max_len"])
         opt_data['mono_tgt'] = TextDataset(mono_tgt_path, max_length=config["max_len"])
+    if not config["back_prefix"] == None:
+        back_src = config["data_dir"] + "/" + config["back_prefix"] + "." + config["src"]
+        back_tgt = config["data_dir"] + "/" + config["back_prefix"] + "." + config["tgt"]
+        opt_data['back'] = ParallelDataset(back_src, back_tgt, max_length=config["max_len"])
 
     return training_data, val_data, opt_data
 

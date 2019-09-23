@@ -6,7 +6,7 @@
     "dropout": 0.5,
     "emb_size": 256,
     "hidden_size": 256,
-    "learning_rate": 0.002,
+    "learning_rate": 0.003,
     "length_penalty": 1.0,
     "lr_reduce_cooldown": 2,
     "lr_reduce_factor": 0.5,

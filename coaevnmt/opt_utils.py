@@ -41,11 +41,6 @@ def create_optimizers(gen_parameters, inf_parameters, config):
             gen_parameters,
             config["opt_type_gen"],
             config["lr_gen"]
-        ),
-        "inf": create_optimizer(
-            inf_parameters,
-            config["opt_type_inf"],
-            config["lr_inf"]
         )
     }
 
@@ -56,16 +51,23 @@ def create_optimizers(gen_parameters, inf_parameters, config):
             config["lr_reduce_patience"],
             config["lr_reduce_cooldown"],
             config["min_lr"]
-        ),
-        "inf": create_scheduler(
+        )
+    }
+
+    if inf_parameters != None:
+        optimizers["inf"] = create_optimizer(
+            inf_parameters,
+            config["opt_type_inf"],
+            config["lr_inf"]
+        )
+
+        schedulers["inf"] = create_scheduler(
             optimizers["inf"],
             config["lr_reduce_factor"],
             config["lr_reduce_patience"],
             config["lr_reduce_cooldown"],
             config["min_lr"]
         )
-
-    }
     return optimizers, schedulers
 
 def create_optimizer(parameters, type, learning_rate):

@@ -21,6 +21,12 @@ class CondNMT(nn.Module):
 
         self.config = config
 
+    def inference_parameters(self):
+        return None
+        
+    def generative_parameters(self):
+        return self.parameters()
+
     def src_embed(self, x):
         x_embed = self.emb_src(x)
         x_embed = self.dropout_layer(x_embed)
@@ -31,7 +37,7 @@ class CondNMT(nn.Module):
         y_embed = self.dropout_layer(y_embed)
         return y_embed
 
-    def generate(self, pre_output):
+    def generate_tm(self, pre_output):
         W = self.emb_tgt.weight if self.config["tied_embeddings"] else self.output_matrix
         return F.linear(pre_output, W)
 
@@ -40,9 +46,12 @@ class CondNMT(nn.Module):
         enc_output, enc_final = self.encoder(x_embed, x_len)
         return enc_output, enc_final
 
+    def init_decoder(self, encoder_outputs, encoder_final):
+        return self.decoder.initialize(encoder_outputs, encoder_final)
+
     def forward(self, x, x_mask, x_len, y):
         enc_output, enc_final = self.encode(x, x_len)
-        dec_hidden = self.decoder.initialize(enc_output, enc_final)
+        dec_hidden = self.init_decoder(enc_output, enc_final)
 
         # Decode function
         outputs = []
@@ -51,7 +60,7 @@ class CondNMT(nn.Module):
             prev_y = y[:, t]
             embed_y = self.tgt_embed(prev_y)
             pre_output, dec_hidden = self.decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden)
-            logits = self.generate(pre_output)
+            logits = self.generate_tm(pre_output)
             outputs.append(logits)
         return torch.cat(outputs, dim=1)
 

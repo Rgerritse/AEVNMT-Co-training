@@ -61,6 +61,7 @@ def ancestral_sample(decoder, emb_tgt, generate_fn, enc_output, dec_hidden, x_ma
     predictions = []
     log_probs = []
     is_complete = torch.zeros_like(prev_y).unsqueeze(-1).byte()
+    # is_complete = torch.zeros_like(prev_y).byte()
     for t in range(config["max_len"]):
         embed_y = emb_tgt(prev_y)
         pre_output, dec_hidden = decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden)
@@ -73,7 +74,7 @@ def ancestral_sample(decoder, emb_tgt, generate_fn, enc_output, dec_hidden, x_ma
         prev_y = prediction.view(batch_size)
 
         predictions.append(torch.where(is_complete, torch.full_like(prediction, pad_idx), prediction))
-        is_complete = is_complete | (prediction == eos_idx)
+        is_complete = is_complete | (prediction == eos_idx).byte()
     return torch.cat(predictions, dim=1)
 
 def greedy(decoder, emb_tgt, logits_layer, enc_output, dec_hidden, x_mask, sos_idx, config):

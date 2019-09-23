@@ -12,27 +12,28 @@ module load CUDA/8.0.44-GCCcore-5.4.0
 module load cuDNN/7.1-CUDA-8.0.44-GCCcore-5.4.0
 
 # Venv
+echo "Loading virtual environment"
 source ${HOME}/code/venv/bin/activate
 
+echo "Coping data"
 cp -r $HOME/code/coaevnmt/data/ ${TMPDIR}/data
 
-session="cond_nmt_lr"
+OUTPUT_DIR="${HOME}/code/coaevnmt/output"
+echo "Creating ${OUTPUT_DIR}"
+mkdir -p ${OUTPUT_DIR}
 
-hyps=(0.005, 0.001 0.0005 0.0001)
+echo "Starting training"
 NUM_GPUS=4
 for ((GPU=0; GPU < ${NUM_GPUS}; GPU++ ))
 do
+	session="aevnmt_new_run_${GPU}"
 
-	OUTPUT_DIR="${HOME}/code/output/${session}-${hyps[$GPU]}"
-	mkdir ${OUTPUT_DIR}
-
-	CUDA_VISIBLE_DEVICES=${GPU} python -u ${HOME}/code/coaevnmt/main.py \
-		--session "${session}-${hyps[$GPU]}" \
-		--config ${HOME}/code/coaevnmt/config/cond_nmt.json \
-		--data_dir ${TMPDIR}/data/en-tr/bilingual/train_100000.en-tr \
+	CUDA_VISIBLE_DEVICES=${GPU} python -u ${HOME}/code/coaevnmt/train_super_new.py \
+		--session "${session}" \
+		--config ${HOME}/code/coaevnmt/config/aevnmt_multi30k.json \
+		--data_dir ${TMPDIR}/data/multi30k \
 		--out_dir ${OUTPUT_DIR} \
-		--learning_rate ${hyps[$GPU]} \
-		&> ${HOME}/code/coaevnmt/output/${session}-${hyps[$GPU]}/log_file &
+		&> "${OUTPUT_DIR}/log_file-${session}" &
 
 done
 wait

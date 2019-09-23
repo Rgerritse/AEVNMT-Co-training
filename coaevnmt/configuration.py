@@ -13,6 +13,7 @@ def get_default_config():
         "dev_prefix": (str, "dev", False, "Dev prefix, expect files with src/tgt suffixes."),
         "mono_prefix": (str, "comparable", False, "Monolingual files prefix, expect files with src/tgt suffixes."),
         "test_prefix": (str, "test", False, "Test prefix, expect files with src/tgt suffixes."),
+        "back_prefix": (str, None, False, "Back-translation prefix, expect files with src/tgt suffixes."),
         "out_dir": (str, "output", False, "Path to output directory"),
 
         # Vocab

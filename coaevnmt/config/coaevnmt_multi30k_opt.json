@@ -28,7 +28,7 @@
     "opt_type_gen": "adam",
     "opt_type_inf": "adam",
     "patience": 10,
-    "reset_opt": false,
+    "reset_opt": true,
     "src": "en",
     "share_vocab": false,
     "subword_token": "@@",
