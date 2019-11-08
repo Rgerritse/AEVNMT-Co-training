@@ -3,6 +3,7 @@ import torch.nn as nn
 from .utils import rnn_creation_fn, tile_rnn_hidden
 from torch.distributions.categorical import Categorical
 import numpy as np
+import random
 
 class Decoder(nn.Module):
     def __init__(self, attention, vocab_tgt_size, config):
@@ -12,13 +13,22 @@ class Decoder(nn.Module):
 
         rnn_dropout = 0. if config["num_dec_layers"] == 1 else config["dropout"]
         rnn_fn = rnn_creation_fn(config["rnn_type"])
-        self.rnn = rnn_fn(config["emb_size"] + 2 * config["hidden_size"], config["hidden_size"], batch_first=True, dropout=rnn_dropout, num_layers=config["num_dec_layers"])
+
+        rnn_input_size = config["emb_size"] + 2 * config["hidden_size"]
+        if config["z_feeding"]:
+            rnn_input_size += config["latent_size"]
+        self.rnn = rnn_fn(rnn_input_size, config["hidden_size"], batch_first=True, dropout=rnn_dropout, num_layers=config["num_dec_layers"])
 
         if config["pass_enc_final"]:
             self.init_layer = nn.Linear(2 * config["hidden_size"], config["hidden_size"])
 
         self.dropout = nn.Dropout(config["dropout"])
-        self.pre_output_layer = nn.Linear(3 * config["hidden_size"] + config["emb_size"], config["hidden_size"])
+
+        pre_output_input_size = 3 * config["hidden_size"] + config["emb_size"]
+        if config["z_to_pre_output"]:
+            pre_output_input_size += config["latent_size"]
+        self.pre_output_layer = nn.Linear(pre_output_input_size, config["hidden_size"])
+
         self.logits_layer = nn.Linear(config["hidden_size"], vocab_tgt_size, bias=False)
         self.config = config
 
@@ -30,7 +40,7 @@ class Decoder(nn.Module):
             hidden = tile_rnn_hidden(hidden, self.rnn)
             return hidden
 
-    def forward_step(self, embed_y, enc_output, x_mask, dec_hidden):
+    def forward_step(self, embed_y, enc_output, x_mask, dec_hidden, z=None):
         if self.config["rnn_type"] == "lstm":
             query = dec_hidden[0]
         else:
@@ -38,12 +48,21 @@ class Decoder(nn.Module):
         query = query[-1].unsqueeze(1)
         embed_y = embed_y.unsqueeze(1)
         context, _ = self.attention.forward(query, x_mask, enc_output)
+
+        # Context dropout
+        if self.training and random.random() < self.config["context_dropout"]:
+            context.fill_(0)
+
+        # Construc rnn_input
         rnn_input = torch.cat([embed_y, context], dim=2)
+        if self.config["z_feeding"]:
+            rnn_input = torch.cat([rnn_input, z.unsqueeze(1)], dim=2)
 
         dec_output, dec_hidden = self.rnn(rnn_input, dec_hidden)
-
         pre_output = torch.cat([embed_y, dec_output, context], dim=2)
         pre_output = self.dropout(pre_output)
+        if self.config["z_to_pre_output"]:
+            pre_output = torch.cat([pre_output, z.unsqueeze(1)], dim=2)
         pre_output = self.pre_output_layer(pre_output)
         return pre_output, dec_hidden
 

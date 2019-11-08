@@ -140,9 +140,13 @@ def save_hypotheses(hypotheses, epoch, config, direction=None):
        for sent in hypotheses:
            the_file.write(sent + '\n')
 
-def compute_bleu(hypotheses, references, epoch, config, direction):
+def compute_bleu(hypotheses, references, epoch, config, direction, kl=None):
     bleu = sacrebleu.raw_corpus_bleu(hypotheses, [references]).score
     scores = '{}/{}/bleu-scores.txt'.format(config["out_dir"], config["session"])
     with open(scores, 'a') as f_score:
-        f_score.write("Epoch: {}, Bleu {}, Direction {}\n".format(epoch, bleu, direction))
+        sentence = "Epoch: {}, Bleu {}".format(epoch, bleu, direction)
+        if kl is not None:
+            sentence += ", KL: {}".format(kl)
+        sentence += ", Direction {}\n"
+        f_score.write(sentence)
     return bleu

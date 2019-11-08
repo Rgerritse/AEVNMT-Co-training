@@ -122,29 +122,6 @@ def train(model, train_fn, validate_fn, bucketing_dl_xy, dev_data, vocab_src, vo
                 step,
                 device
             )
-            # step += 1
-        # for step, (sentences_x, sentences_y) in enumerate(bucketing_dl):
-        #     model.train()
-
-
-
-
-            # x_in, x_out, x_mask, x_len, x_noisy_in = create_noisy_batch(
-            #     sentences_x, vocab_src, device, word_dropout=config["word_dropout"])
-            # y_in, y_out, y_mask, y_len, y_noisy_in = create_noisy_batch(
-            #     sentences_y, vocab_tgt, device, word_dropout=config["word_dropout"])
-            #
-            # x_mask = x_mask.unsqueeze(1)
-            # y_mask = y_mask.unsqueeze(1)
-            # optimizer.zero_grad()
-            #
-            # loss = train_fn(model, x_in, x_noisy_in, x_out, x_len, x_mask, y_in, y_noisy_in, y_out, step)
-            # loss.backward()
-            #
-            # if config["max_gradient_norm"] > 0:
-            #     clip_grad_norm_(model.parameters(), config["max_gradient_norm"])
-            #
-            # optimizer.step()
 
             print("Epoch: {:03d}/{:03d}, Batch {:05d}/{:05d}, xy-Loss: {:.2f}".format(
                 epoch + 1,
@@ -155,32 +132,7 @@ def train(model, train_fn, validate_fn, bucketing_dl_xy, dev_data, vocab_src, vo
             )
             step += 1
 
-            # x_in, x_out, x_mask, x_len, x_noisy_in = create_noisy_batch(
-            #     sentences_x, vocab_src, device, word_dropout=config["word_dropout"])
-            # y_in, y_out, y_mask, y_len, y_noisy_in = create_noisy_batch(
-            #     sentences_y, vocab_tgt, device, word_dropout=config["word_dropout"])
-            #
-            # x_mask = x_mask.unsqueeze(1)
-            # y_mask = y_mask.unsqueeze(1)
-            # optimizer.zero_grad()
-            #
-            # loss = train_fn(model, x_in, x_noisy_in, x_out, x_len, x_mask, y_in, y_noisy_in, y_out, step)
-            # loss.backward()
-            #
-            # if config["max_gradient_norm"] > 0:
-            #     clip_grad_norm_(model.parameters(), config["max_gradient_norm"])
-            #
-            # optimizer.step()
-            #
-            # print("Epoch: {:03d}/{:03d}, Batch {:05d}/{:05d}, Loss: {:.2f}".format(
-            #     epoch + 1,
-            #     config["num_epochs"],
-            #     step + 1,
-            #     len(bucketing_dl.dataloader),
-            #     loss.item())
-            # )
-
-        val_bleu = evaluate(model, validate_fn, dev_data, vocab_src, vocab_tgt, epoch, config)
+            val_bleu = evaluate(model, validate_fn, dev_data, vocab_src, vocab_tgt, epoch, config)
         scheduler.step(float(val_bleu))
 
         print("Blue score: {}".format(val_bleu))

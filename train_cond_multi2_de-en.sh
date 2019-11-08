@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --nodes=1
-#SBATCH --job-name=aev_en-de
+#SBATCH --job-name=c_fde
 #SBATCH --cpus-per-task=1
 #SBATCH --time=48:00:00
 #SBATCH --partition=gpu
@@ -22,11 +22,18 @@ OUTPUT_DIR="${HOME}/code/coaevnmt/output"
 echo "Creating ${OUTPUT_DIR}"
 mkdir -p ${OUTPUT_DIR}
 
-session="aevnmt_en-de_run_4"
+echo "Starting training"
+NUM_GPUS=4
+for ((GPU=0; GPU < ${NUM_GPUS}; GPU++ ))
+do
+	session="cond_nmt_de-en_run_$((GPU+4))"
 
-python -u ${HOME}/code/coaevnmt/train_super.py \
-	--session "${session}" \
-	--config ${HOME}/code/coaevnmt/config/aevnmt_multi30k_en-de.json \
-	--data_dir ${TMPDIR}/data/multi30k \
-	--out_dir ${OUTPUT_DIR} \
-	&> "${OUTPUT_DIR}/log_file-${session}"
+	CUDA_VISIBLE_DEVICES=${GPU} python -u ${HOME}/code/coaevnmt/train_super.py \
+		--session "${session}" \
+		--config ${HOME}/code/coaevnmt/config/cond_nmt_multi30k_de-en.json \
+		--data_dir ${TMPDIR}/data/multi30k \
+		--out_dir ${OUTPUT_DIR} \
+		&> "${OUTPUT_DIR}/log_file-${session}" &
+
+done
+wait

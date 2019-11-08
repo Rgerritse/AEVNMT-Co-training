@@ -91,7 +91,7 @@ def batch_to_sentences(tensors, vocab, no_filter=False):
 
         sentences.append(" ".join(sentence))
     return np.array(sentences)
-# 
+#
 # def remove_subword_tokens(sentences, subword_token):
 #     """
 #     Removes all subword tokens from a list of sentences. E.g. "The bro@@ wn fox ." with

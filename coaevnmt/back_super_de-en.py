@@ -21,7 +21,7 @@ def main():
     model, _, validate_fn = create_model(vocab_src, vocab_tgt, config)
     model.to(torch.device(config["device"]))
 
-    checkpoint_path = "{}/cond_fourth_de-en_run_7/checkpoints/cond_fourth_de-en_run_7".format(config["out_dir"])
+    checkpoint_path = "{}/cond_nmt_de-en_run_7/checkpoints/cond_nmt_de-en_run_7".format(config["out_dir"])
 
     state = torch.load(checkpoint_path)
     model.load_state_dict(state['state_dict'])
@@ -36,7 +36,6 @@ def main():
                         shuffle=False, num_workers=4)
         # val_dl = BucketingParallelDataLoader(val_dl)
         for sentences_x, sentences_y in tqdm(val_dl):
-
 
             sentences_x = np.array(sentences_x)
             seq_len = np.array([len(s.split()) for s in sentences_x])

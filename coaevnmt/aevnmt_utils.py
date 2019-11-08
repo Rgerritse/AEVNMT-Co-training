@@ -26,8 +26,8 @@ def train_step(model, x_in, x_noisy_in, x_out, x_len, x_mask, y_in, y_noisy_in, 
     qz = model.inference(x_in, x_mask, x_len)
     z = qz.rsample()
 
-    tm_logits, lm_logits = model(x_noisy_in, x_len, x_mask, y_noisy_in, z)
-    loss = model.loss(tm_logits, lm_logits, y_out, x_out, qz, step)
+    tm_logits, lm_logits, z_src_logits, z_tgt_logits = model(x_noisy_in, x_len, x_mask, y_noisy_in, z)
+    loss = model.loss(tm_logits, lm_logits, z_src_logits, z_tgt_logits, y_out, x_out, qz, step)
     return loss
 
 def validate(model, dev_data, vocab_src, vocab_tgt, epoch, config, direction=None):
@@ -40,6 +40,7 @@ def validate(model, dev_data, vocab_src, vocab_tgt, epoch, config, direction=Non
         val_dl = DataLoader(dev_data, batch_size=config["batch_size_eval"],
                         shuffle=False, num_workers=2)
         val_dl = BucketingParallelDataLoader(val_dl)
+        val_kl = 0
         for sentences_x, sentences_y in val_dl:
             if direction == None or direction == "xy":
                 x_in, _, x_mask, x_len = create_batch(sentences_x, vocab_src, device)
@@ -51,13 +52,18 @@ def validate(model, dev_data, vocab_src, vocab_tgt, epoch, config, direction=Non
             qz = model.inference(x_in, x_mask, x_len)
             z = qz.mean
 
+            pz = torch.distributions.Normal(loc=model.prior_loc, scale=model.prior_scale).expand(qz.mean.size())
+            kl_loss = torch.distributions.kl.kl_divergence(qz, pz)
+            kl_loss = kl_loss.sum(dim=1)
+            val_kl += kl_loss.sum(dim=0)
+
             enc_output, enc_hidden = model.encode(x_in, x_len, z)
             dec_hidden = model.init_decoder(enc_output, enc_hidden, z)
 
             raw_hypothesis = beam_search(model.decoder, model.emb_tgt,
                 model.generate_tm, enc_output, dec_hidden, x_mask, vocab_tgt.size(),
                 vocab_tgt[SOS_TOKEN], vocab_tgt[EOS_TOKEN],
-                vocab_tgt[PAD_TOKEN], config)
+                vocab_tgt[PAD_TOKEN], config, z)
 
             hypothesis = batch_to_sentences(raw_hypothesis, vocab_tgt)
             model_hypotheses += hypothesis.tolist()
@@ -67,7 +73,8 @@ def validate(model, dev_data, vocab_src, vocab_tgt, epoch, config, direction=Non
             else:
                 references += sentences_x.tolist()
 
+        val_kl /= len(dev_data)
         save_hypotheses(model_hypotheses, epoch, config, direction)
         model_hypotheses, references = clean_sentences(model_hypotheses, references, config)
-        bleu = compute_bleu(model_hypotheses, references, epoch, config, direction)
+        bleu = compute_bleu(model_hypotheses, references, epoch, config, direction, kl=val_kl)
         return bleu

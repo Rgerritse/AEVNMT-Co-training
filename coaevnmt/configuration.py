@@ -17,7 +17,6 @@ def get_default_config():
         "out_dir": (str, "output", False, "Path to output directory"),
 
         # Vocab
-        # "vocab_prefix": (str, "aevnmt_vocab", False, "Vocab prefix, expect files with src/tgt suffixes."),
         "vocab_prefix": (str, "vocab_new", False, "Vocab prefix, expect files with src/tgt suffixes."),
         "sos": (str, "<s>", False, "Start-of-sentence symbol."),
         "eos": (str, "</s>", False, "End-of-sentence symbol."),
@@ -30,9 +29,11 @@ def get_default_config():
         "emb_size": (int, 512, False, "Dimensionality of word embeddings"),
         "hidden_size": (int, 512, False, "Dimensionality of hidden units"),
         "kl_free_nats": (float, 10.0, False, "Free bits value"),
+        "kl_free_nats_style": (str, "sum", False, "Free bits method"),
         "kl_annealing_steps": (int, 0, False, "Number of steps to anneal kl loss"),
         "dropout": (float, 0.5, False, "Dropout"),
         "word_dropout": (float, 0.3, False, "Word Dropout"),
+        "context_dropout": (float, 0.0, False, "Context Vector Dropout"),
         "attention": (str, "bahdanau", False, "Attention type: bahdanau|luong"),
         "rnn_type": (str, "lstm", False, "Rnn type: gru|lstm"),
         "max_len": (int, 50, False, "Maximum sequence length"),
@@ -45,6 +46,11 @@ def get_default_config():
         "tied_embeddings": (bool, True, False, "Tie embeddings layer to output layer"),
         "pass_enc_final": (bool,  True, False, "Whether to pass encoder's hidden state to decoder when using an attention based model."),
         "share_vocab": (bool, False, False, "Whether to share vocabulary between source and target."),
+        "z_to_pre_output": (bool, False, False, "Whether the latent variable z is added to the pre-output layer."),
+        "z_inference_mode": (str, "default", False, "Mode used in the inferece model to infer z."),
+        "z_feeding": (bool, False, False, "Whether the latent variable z is fed to the rnn at each timestep."),
+        "z_vocab_loss": (bool, False, False, "Whether to use an auxillary vocabulary loss on z."),
+
 
         # Training
         "learning_rate": (float, 0.0005, False, "Learning rate"),
@@ -52,6 +58,10 @@ def get_default_config():
         "max_gradient_norm": (float, 4.0, False, "Max norm of the gradients"),
         "latent_size": (int, 256, False, "Size of the latent variable"),
         "bilingual_warmup": (int, 10, False, "Number of epochs to train using only bilingual data"),
+        "conv_metric": (str, "joint", False, "Metric for convergence"),
+        "decoding_method": (str, "greedy", False, "Method for decoding backtranslations"),
+        "greedy_sampling": (bool, False, False, "Whether to sample greedy."),
+        "decoding_beam_width": (int, 3, False, "Beam width for decoding backtranslations"),
 
         # Evaluation
         "batch_size_eval": (int, 64, False, "Number of samples per batch during evaluation"),

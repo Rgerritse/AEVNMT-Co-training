@@ -26,6 +26,11 @@ class AEVNMT(nn.Module):
         self.dec_init_layer = nn.Linear(config["latent_size"], config["hidden_size"])
         self.lm_init_layer = nn.Linear(config["latent_size"], config["hidden_size"])
 
+        if config["z_vocab_loss"]:
+            self.z_loss_src_layer = nn.Linear(config["latent_size"], vocab_src.size())
+            self.z_loss_tgt_layer = nn.Linear(config["latent_size"], vocab_tgt.size())
+            self.bceloss = nn.BCEWithLogitsLoss(reduction="none")
+
         if not config["tied_embeddings"]:
             self.tm_logits_matrix = nn.Parameter(torch.randn(vocab_tgt.size(), config["hidden_size"]))
             self.lm_logits_matrix = nn.Parameter(torch.randn(vocab_src.size(), config["hidden_size"]))
@@ -112,7 +117,7 @@ class AEVNMT(nn.Module):
         max_len = embed_x.shape[1]
         for t in range(max_len):
             prev_x = embed_x[:, t:t+1, :]
-            pre_output, hidden = self.language_model.forward_step(prev_x, hidden)
+            pre_output, hidden = self.language_model.forward_step(prev_x, hidden, z)
             logits = self.generate_lm(pre_output)
             outputs.append(logits)
         return torch.cat(outputs, dim=1)
@@ -126,13 +131,19 @@ class AEVNMT(nn.Module):
         for t in range(max_len):
             prev_y = y[:, t]
             embed_y = self.tgt_embed(prev_y)
-            pre_output, dec_hidden = self.decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden)
+            pre_output, dec_hidden = self.decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden, z)
             logits = self.generate_tm(pre_output)
             tm_outputs.append(logits)
         tm_logits = torch.cat(tm_outputs, dim=1)
         lm_logits = self.model_language(x, z)
 
-        return tm_logits, lm_logits
+        z_src_logits = None
+        z_tgt_logits = None
+        if self.config["z_vocab_loss"]:
+            z_src_logits = self.z_loss_src_layer(z)
+            z_tgt_logits = self.z_loss_tgt_layer(z)
+
+        return tm_logits, lm_logits, z_src_logits, z_tgt_logits
 
     # Change this with ancestral_sample
     def sample(self, enc_output, y_mask, dec_hidden):
@@ -143,10 +154,6 @@ class AEVNMT(nn.Module):
         output = []
         for t in range(self.config["max_len"]):
             embed = self.emb_tgt(prev)
-            # print("embed: ", embed.shape)
-            # print("enc_output: ", enc_output.shape)
-            # print("y_mask: ", y_mask.shape)
-            # print("dec_hidden: ", dec_hidden[0].shape)
             pre_output, dec_hidden = self.decoder.forward_step(embed, enc_output, y_mask, dec_hidden)
             logits = self.generate_tm(pre_output)
             categorical = Categorical(logits=logits)
@@ -156,7 +163,7 @@ class AEVNMT(nn.Module):
             stacked_output = np.stack(output, axis=1)  # batch, time
         return stacked_output
 
-    def loss(self, tm_logits, lm_logits, tm_targets, lm_targets, qz, step):
+    def loss(self, tm_logits, lm_logits, z_src_logits, z_tgt_logits, tm_targets, lm_targets, qz, step):
         kl_weight = 1.0
         if (self.config["kl_annealing_steps"] > 0 and step < self.config["kl_annealing_steps"]):
             kl_weight *= 0.001 + (1.0-0.001) / self.config["kl_annealing_steps"] * step
@@ -171,15 +178,34 @@ class AEVNMT(nn.Module):
 
         pz = torch.distributions.Normal(loc=self.prior_loc, scale=self.prior_scale).expand(qz.mean.size())
         kl_loss = torch.distributions.kl.kl_divergence(qz, pz)
+        if (self.config["kl_free_nats_style"] == "indv"):
+            if (self.config["kl_free_nats"] > 0 and (self.config["kl_annealing_steps"] == 0 or step >= self.config["kl_annealing_steps"])):
+                kl_loss = torch.clamp(kl_loss, min=self.config["kl_free_nats"])
         kl_loss = kl_loss.sum(dim=1)
 
-        if (self.config["kl_free_nats"] > 0 and (self.config["kl_annealing_steps"] == 0 or step >= self.config["kl_annealing_steps"])):
-            kl_loss = torch.clamp(kl_loss, min=self.config["kl_free_nats"])
+        if (self.config["kl_free_nats_style"] == "sum"):
+            if (self.config["kl_free_nats"] > 0 and (self.config["kl_annealing_steps"] == 0 or step >= self.config["kl_annealing_steps"])):
+                kl_loss = torch.clamp(kl_loss, min=self.config["kl_free_nats"])
+
         kl_loss *= kl_weight
 
         tm_log_likelihood = -tm_loss
         lm_log_likelihood = -lm_loss
         elbo = tm_log_likelihood + lm_log_likelihood - kl_loss
         loss = -elbo
+
+        if self.config["z_vocab_loss"]:
+            z_src_target = torch.zeros_like(z_src_logits)
+            z_tgt_target = torch.zeros_like(z_tgt_logits)
+
+            index_src = torch.arange(lm_targets.shape[0], dtype=torch.long)[:, None].expand(-1, lm_targets.shape[1])
+            z_src_target[index_src.reshape(-1), lm_targets.view(-1)] = 1
+            z_src_loss = self.bceloss(z_src_logits, z_src_target).sum(dim=1)
+            loss += z_src_loss
+
+            index_tgt = torch.arange(tm_targets.shape[0], dtype=torch.long)[:, None].expand(-1, tm_targets.shape[1])
+            z_tgt_target[index_tgt.reshape(-1), tm_targets.view(-1)] = 1
+            z_tgt_loss = self.bceloss(z_tgt_logits, z_tgt_target).sum(dim=1)
+            loss += z_tgt_loss
         # loss = tm_loss + lm_loss + kl_loss
         return loss.mean()

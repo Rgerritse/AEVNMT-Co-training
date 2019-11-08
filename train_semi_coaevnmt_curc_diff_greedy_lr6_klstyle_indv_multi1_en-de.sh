@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --nodes=1
-#SBATCH --job-name=aev_train
+#SBATCH --job-name=cagr1
 #SBATCH --cpus-per-task=1
 #SBATCH --time=48:00:00
 #SBATCH --partition=gpu
@@ -8,8 +8,8 @@
 # Loading modules
 echo "Loading modules"
 module load python/3.5.0
-module load CUDA/8.0.44-GCCcore-5.4.0
-module load cuDNN/7.1-CUDA-8.0.44-GCCcore-5.4.0
+module load CUDA/10.0.130
+module load cuDNN/7.4.2-CUDA-10.0.130
 
 # Venv
 echo "Loading virtual environment"
@@ -26,13 +26,14 @@ echo "Starting training"
 NUM_GPUS=4
 for ((GPU=0; GPU < ${NUM_GPUS}; GPU++ ))
 do
-	session="aevnmt_new_run_${GPU}"
+	session="coaevnmt_curc_diff_greedy_lr6_en-de_run_${GPU}"
 
-	CUDA_VISIBLE_DEVICES=${GPU} python -u ${HOME}/code/coaevnmt/train_super_new.py \
+	CUDA_VISIBLE_DEVICES=${GPU} python -u ${HOME}/code/coaevnmt/train_semi.py \
 		--session "${session}" \
-		--config ${HOME}/code/coaevnmt/config/aevnmt_multi30k.json \
+		--config ${HOME}/code/coaevnmt/config/coaevnmt_multi30k_curc_diff_greedy_lr6_en-de.json \
 		--data_dir ${TMPDIR}/data/multi30k \
 		--out_dir ${OUTPUT_DIR} \
+		--kl_free_nats_style indv \
 		&> "${OUTPUT_DIR}/log_file-${session}" &
 
 done

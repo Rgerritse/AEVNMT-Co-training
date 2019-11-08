@@ -72,9 +72,9 @@ def evaluate(model, dev_data, vocab_src, vocab_tgt, config, direction=None):
 def main():
     # config = setup_config()
     config = setup_config()
-    config["dev_prefix"] = "dev"
+    # config["dev_prefix"] = "dev"
     # config["dev_prefix"] = "test_2016_flickr.lc.norm.tok"
-    # config["dev_prefix"] = "test_2017_flickr.lc.norm.tok"
+    config["dev_prefix"] = "test_2017_flickr.lc.norm.tok"
 
     vocab_src, vocab_tgt = load_vocabularies(config)
     _, dev_data, _ = load_data(config, vocab_src=vocab_src, vocab_tgt=vocab_tgt)
@@ -85,7 +85,15 @@ def main():
     # checkpoint_path = "output/coaevnmt_greedy_lm_off_run_5/checkpoints/coaevnmt_greedy_lm_off_run_5"
     # checkpoint_path = "output/coaevnmt_lr3_curriculum_en-de_run_4/checkpoints/coaevnmt_lr3_curriculum_en-de_run_4"
     # checkpoint_path = "output/coaevnmt_lr3_no_curriculum_no_warmup_en-de_run_4/checkpoints/coaevnmt_lr3_no_curriculum_no_warmup_en-de_run_4"
-    checkpoint_path = "output/coaevnmt_lr3_no_bilingual_en-de_run_0/checkpoints/coaevnmt_lr3_no_bilingual_en-de_run_0"
+    # checkpoint_path = "output/coaevnmt_lr3_beam_dec_3_en-de_run_3/checkpoints/coaevnmt_lr3_beam_dec_3_en-de_run_3"
+    # checkpoint_path = "output/conmt_anc_en-de_run_3/checkpoints/conmt_anc_en-de_run_3"
+    # checkpoint_path = "output/conmt_greedy_en-de_run_3/checkpoints/conmt_greedy_en-de_run_3"
+    # checkpoint_path = "output/conmt_beam_dec_3_2en-de_run_3/checkpoints/conmt_beam_dec_3_2en-de_run_3"
+    # checkpoint_path = "output/conmt_beam_dec_5_2en-de_run_3/checkpoints/conmt_beam_dec_5_2en-de_run_3"
+    checkpoint_path = "output/conmt_beam_dec_10_2en-de_run_3/checkpoints/conmt_beam_dec_10_2en-de_run_3"
+    # checkpoint_path = "output/conmt_beam_dec_10_en-de_run_3/checkpoints/conmt_beam_dec_10_en-de_run_3"
+    # checkpoint_path = "output/conmt_curc_diff_greedy_conv_yx_en-de_run_7/checkpoints/conmt_curc_diff_greedy_conv_yx_en-de_run_7"
+
 
 
     state = torch.load(checkpoint_path)

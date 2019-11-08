@@ -17,6 +17,7 @@ from data_prep.constants import UNK_TOKEN, PAD_TOKEN, SOS_TOKEN, EOS_TOKEN
 from itertools import cycle
 from data_prep.utils import create_noisy_batch
 from opt_utils import RequiresGradSwitch, create_optimizers, optimizer_step, scheduler_step
+import time
 
 def create_models(vocab_src, vocab_tgt, config):
 
@@ -73,7 +74,7 @@ def monolingual_step(model_xy, model_yx, cycle_iterate_dl, mono_train_fn, optimi
 
     y_mask = y_mask.unsqueeze(1)
 
-    y_mono_loss = mono_train_fn(model_xy, model_yx, y_in, y_len, y_mask, y_out, vocab_src, config, step)
+    y_mono_loss = mono_train_fn(model_xy, model_yx, y_in, y_noisy_in, y_len, y_mask, y_out, vocab_src, config, step)
     y_mono_loss.backward()
 
     optimizer_step(model_xy.generative_parameters(), optimizers['gen'], config["max_gradient_norm"])
@@ -138,6 +139,7 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, bucketing
     cycle_iterate_dl_xy = cycle(bucketing_dl_xy)
     cycle_curriculum = cycle(curriculum)
     device = torch.device("cpu") if config["device"] == "cpu" else torch.device("cuda:0")
+    start_time = time.time()
     for epoch in range(saved_epoch, config["num_epochs"]):
         # Reset optimizers after bilingual warmup
         if epoch == config["bilingual_warmup"] and config["reset_opt"]:
@@ -225,10 +227,17 @@ def train(model_xy, model_yx, bi_train_fn, mono_train_fn, validate_fn, bucketing
         scheduler_step(schedulers_yx, val_bleu_yx)
 
         print("Blue scores: {}-{}: {}, {}-{}: {}".format(config["src"], config["tgt"], val_bleu_xy, config["tgt"], config["src"], val_bleu_yx))
-
+        print("Elapsed time in seconds: {}".format(round(time.time() - start_time)))
         if epoch >= config["bilingual_warmup"]:
-            if float(val_bleu_xy * val_bleu_yx) > max_bleu:
-                max_bleu = float(val_bleu_xy * val_bleu_yx)
+            if config["conv_metric"] == "joint":
+                metric = float(val_bleu_xy * val_bleu_yx)
+            elif config["conv_metric"] == "xy":
+                metric = float(val_bleu_xy)
+            elif config["conv_metric"] == "yx":
+                metric = float(val_bleu_yx)
+
+            if metric > max_bleu:
+                max_bleu = metric
                 patience_counter = 0
 
                 # Save checkpoint

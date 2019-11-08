@@ -52,7 +52,7 @@ def greedy_lm(decoder, emb_tgt, logits_layer, lm_hidden, sos_idx, batch_size, co
     return stacked_output
 
 
-def ancestral_sample(decoder, emb_tgt, generate_fn, enc_output, dec_hidden, x_mask, sos_idx, eos_idx, pad_idx, config, greedy=False):
+def ancestral_sample(decoder, emb_tgt, generate_fn, enc_output, dec_hidden, x_mask, sos_idx, eos_idx, pad_idx, config, greedy=False, z=None):
     batch_size = x_mask.size(0)
     prev_y = x_mask.new_full(size=[batch_size], fill_value=sos_idx,
                                dtype=torch.long)
@@ -64,7 +64,7 @@ def ancestral_sample(decoder, emb_tgt, generate_fn, enc_output, dec_hidden, x_ma
     # is_complete = torch.zeros_like(prev_y).byte()
     for t in range(config["max_len"]):
         embed_y = emb_tgt(prev_y)
-        pre_output, dec_hidden = decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden)
+        pre_output, dec_hidden = decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden, z=z)
         logits = generate_fn(pre_output)
         py_x = Categorical(logits=logits)
         if greedy:
@@ -77,7 +77,7 @@ def ancestral_sample(decoder, emb_tgt, generate_fn, enc_output, dec_hidden, x_ma
         is_complete = is_complete | (prediction == eos_idx).byte()
     return torch.cat(predictions, dim=1)
 
-def greedy(decoder, emb_tgt, logits_layer, enc_output, dec_hidden, x_mask, sos_idx, config):
+def greedy(decoder, emb_tgt, logits_layer, enc_output, dec_hidden, x_mask, sos_idx, config, z=None):
     batch_size = x_mask.size(0)
     prev_y = x_mask.new_full(size=[batch_size, 1], fill_value=sos_idx,
                                dtype=torch.long)
@@ -88,7 +88,7 @@ def greedy(decoder, emb_tgt, logits_layer, enc_output, dec_hidden, x_mask, sos_i
     for t in range(config["max_len"]):
         # decode one single step
         embed_y = emb_tgt(prev_y)
-        pre_output, dec_hidden = decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden)
+        pre_output, dec_hidden = decoder.forward_step(embed_y, enc_output, x_mask, dec_hidden, z=z)
         logits = logits_layer(pre_output)
 
         # greedy decoding: choose arg max over vocabulary in each step
@@ -99,7 +99,7 @@ def greedy(decoder, emb_tgt, logits_layer, enc_output, dec_hidden, x_mask, sos_i
     stacked_output = np.stack(output, axis=1)  # batch, time
     return stacked_output
 
-def beam_search(decoder, emb_tgt, generate, enc_output, dec_hidden, x_mask, tgt_vocab_size, sos_idx, eos_idx, pad_idx, config):
+def beam_search(decoder, emb_tgt, generate, enc_output, dec_hidden, x_mask, tgt_vocab_size, sos_idx, eos_idx, pad_idx, config, z=None, beam_width=10):
     """
     Beam search with size beam_width. Follows OpenNMT-py implementation.
     In each decoding step, find the k most likely partial hypotheses.
@@ -107,17 +107,17 @@ def beam_search(decoder, emb_tgt, generate, enc_output, dec_hidden, x_mask, tgt_
     """
     n_best = 1
     decoder.eval()
-    beam_width = config["beam_width"]
     alpha = config["length_penalty"]
     max_len = config["max_len"]
     with torch.no_grad():
-
         # Initialize the hjidden state and create the initial input.
         batch_size = x_mask.size(0)
         prev_y = torch.full(size=[batch_size], fill_value=sos_idx, dtype=torch.long,
                             device=x_mask.device)
 
         # Tile dec_hidden decoder states and encoder outputs beam_width times
+        if z is not None:
+            z = tile(z, beam_width, dim=0)    # [B*beam_width, 1, T_x]
         dec_hidden = tile(dec_hidden, beam_width, dim=1)    # [layers, B*beam_width, H_dec]
         decoder.attention.proj_keys = tile(decoder.attention.proj_keys,
                                            beam_width, dim=0)
@@ -158,7 +158,7 @@ def beam_search(decoder, emb_tgt, generate, enc_output, dec_hidden, x_mask, tgt_
 
             # expand current hypotheses, decode one single step
             prev_y = emb_tgt(prev_y)
-            pre_output, dec_hidden = decoder.forward_step(prev_y, enc_output, x_mask, dec_hidden)
+            pre_output, dec_hidden = decoder.forward_step(prev_y, enc_output, x_mask, dec_hidden, z=z)
             logits = generate(pre_output)
             log_probs = F.log_softmax(logits, dim=-1).squeeze(1)  # [B*beam_width, |V_y|]
 
@@ -243,6 +243,8 @@ def beam_search(decoder, emb_tgt, generate, enc_output, dec_hidden, x_mask, tgt_
             select_indices = batch_index.view(-1)
             enc_output = enc_output.index_select(0, select_indices)
             x_mask = x_mask.index_select(0, select_indices)
+            if z is not None:
+                z = z.index_select(0, select_indices)
             decoder.attention.proj_keys = decoder.attention.proj_keys. \
                     index_select(0, select_indices)
 

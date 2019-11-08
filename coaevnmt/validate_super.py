@@ -25,10 +25,10 @@ def main():
     model.to(torch.device(config["device"]))
 
     # checkpoint_path = "output/cond_nmt_back_en-de_run_4/checkpoints/cond_nmt_back_en-de_run_4"
-    # checkpoint_path = "output/cond_nmt_en-de_run_4/checkpoints/cond_nmt_en-de_run_4"
-    # checkpoint_path = "output/cond_nmt_back_de-en_run_4/checkpoints/cond_nmt_back_de-en_run_4"
-    checkpoint_path = "output/cond_back_balanced_fourth_en-de_run_0/checkpoints/cond_back_balanced_fourth_en-de_run_0"
-    # checkpoint_path = "output/aevnmt_en-de_run_0/checkpoints/aevnmt_en-de_run_0"
+    # checkpoint_path = "output/cond_nmt_de-en_run_7/checkpoints/cond_nmt_de-en_run_7"
+    # checkpoint_path = "output/cond_nmt_back_de-en_run_0/checkpoints/cond_nmt_back_de-en_run_0"
+    # checkpoint_path = "output/cond_back_balanced_fourth_en-de_run_0/checkpoints/cond_back_balanced_fourth_en-de_run_0"
+    checkpoint_path = "output/aevnmt_de-en_run_7/checkpoints/aevnmt_de-en_run_7"
     # checkpoint_path = "output/aevnmt_de-en_run_4/checkpoints/aevnmt_de-en_run_4"
 
     state = torch.load(checkpoint_path)

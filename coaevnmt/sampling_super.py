@@ -26,7 +26,7 @@ def sample_from_latent(model, vocab_src, vocab_tgt, config):
     x_samples = [x_init.unsqueeze(-1)]
 
     for _ in range(config["max_len"]):
-        pre_output, hidden_lm = model.language_model.forward_step(x_embed, hidden_lm)
+        pre_output, hidden_lm = model.language_model.forward_step(x_embed, hidden_lm, z)
         logits = model.generate_lm(pre_output)
         next_word_dist = torch.distributions.categorical.Categorical(logits=logits)
         x = next_word_dist.sample()
@@ -47,10 +47,10 @@ def sample_from_posterior(model, sentences_x, vocab_src, vocab_tgt, config):
     x_in, _, x_mask, x_len = create_batch(sentences_x, vocab_src, device)
     x_mask = x_mask.unsqueeze(1)
 
-    qz = model.inference(x_in, x_mask)
+    qz = model.inference(x_in, x_mask, x_len)
     z = qz.sample()
 
-    enc_output, enc_hidden = model.encode(x_in, z)
+    enc_output, enc_hidden = model.encode(x_in, x_len, z)
     dec_hidden = model.init_decoder(enc_output, enc_hidden, z)
 
     y_samples = ancestral_sample(model.decoder,
@@ -63,7 +63,8 @@ def sample_from_posterior(model, sentences_x, vocab_src, vocab_tgt, config):
                                  vocab_tgt[EOS_TOKEN],
                                  vocab_tgt[PAD_TOKEN],
                                  config,
-                                 greedy=True)
+                                 greedy=True,
+                                 z=z)
 
     y_samples = batch_to_sentences(y_samples, vocab_tgt)
     print("Sample translations from the approximate posterior")
@@ -84,7 +85,8 @@ def main():
     model, _, validate_fn = create_model(vocab_src, vocab_tgt, config)
     model.to(torch.device(config["device"]))
 
-    checkpoint_path = "output/aevnmt_new_kl_10_wd_0.1/checkpoints/aevnmt_new_kl_10_wd_0.1"
+    # checkpoint_path = "output/aevnmt_z_loss_en-de_run_0/checkpoints/aevnmt_z_loss_en-de_run_0"
+    checkpoint_path = "output/aevnmt_z_loss_de-en_run_0/checkpoints/aevnmt_z_loss_de-en_run_0"
     state = torch.load(checkpoint_path)
     model.load_state_dict(state['state_dict'])
 

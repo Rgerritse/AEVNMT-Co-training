@@ -10,7 +10,7 @@ from modules.utils import tile_rnn_hidden
 from modules.search import ancestral_sample
 
 import torch
-from train_semi_new import create_models
+from train_semi import create_models
 from configuration import setup_config
 from joeynmt import data
 from joeynmt.batch import Batch
@@ -58,10 +58,10 @@ def sample_from_posterior(model, sentences_x, vocab_src, vocab_tgt, config):
     x_in, _, x_mask, x_len = create_batch(sentences_x, vocab_src, device)
     x_mask = x_mask.unsqueeze(1)
 
-    qz = model.inference(x_in, x_mask)
+    qz = model.inference(x_in, x_mask, x_len)
     z = qz.sample()
 
-    enc_output, enc_hidden = model.encode(x_in, z)
+    enc_output, enc_hidden = model.encode(x_in, x_len, z)
     dec_hidden = model.init_decoder(enc_output, enc_hidden, z)
 
     y_samples = ancestral_sample(model.decoder,
@@ -125,7 +125,7 @@ def sample_from_posterior(model, sentences_x, vocab_src, vocab_tgt, config):
 #     dec_hidden = model.init_decoder(enc_output, enc_hidden, z)
 #
 #     # Sample target sentences conditional on the source and z.
-#     y_samples = ancestral_sample(model.decoder,
+#     y_samples = ancestral_sample(model.decoder,output/coaevnmt_greedy_lm_off_run_5/checkpoints/coaevnmt_greedy_lm_off_run_5
 #                                  model.emb_tgt,
 #                                  model.generate_tm,
 #                                  enc_output,
@@ -181,7 +181,7 @@ def main():
     model_xy.to(torch.device(config["device"]))
     model_yx.to(torch.device(config["device"]))
 
-    checkpoint_path = "output/coaevnmt_greedy_lm_off_run_5/checkpoints/coaevnmt_greedy_lm_off_run_5"
+    checkpoint_path = "output/coaevnmt_curc_diff_greedy_lr2_en-de_run_1/checkpoints/coaevnmt_curc_diff_greedy_lr2_en-de_run_1"
     state = torch.load(checkpoint_path)
     model_xy.load_state_dict(state['state_dict_xy'])
     model_yx.load_state_dict(state['state_dict_yx'])

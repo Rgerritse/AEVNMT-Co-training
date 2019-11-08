@@ -21,24 +21,39 @@ def bi_train_fn(model_xy, model_yx, x_in, x_noisy_in, x_out, x_len, x_mask, y_in
 
     loss = loss_xy + loss_yx
     return loss
-
-def mono_train_fn(model_xy, model_yx, y_in, y_len, y_mask, y_out, vocab_src, config, step):
+    
+def mono_train_fn(model_xy, model_yx, y_in, y_noisy_in, y_len, y_mask, y_out, vocab_src, config, step):
     device = torch.device("cpu") if config["device"] == "cpu" else torch.device("cuda:0")
     with torch.no_grad():
         enc_output, enc_final = model_yx.encode(y_in, y_len)
         dec_hidden = model_yx.init_decoder(enc_output, enc_final)
 
-        x_samples = ancestral_sample(model_yx.decoder,
-                                     model_yx.emb_tgt,
-                                     model_yx.generate_tm,
-                                     enc_output,
-                                     dec_hidden,
-                                     y_mask,
-                                     vocab_src[SOS_TOKEN],
-                                     vocab_src[EOS_TOKEN],
-                                     vocab_src[PAD_TOKEN],
-                                     config,
-                                     greedy=config["greedy_sampling"])
+        if config["decoding_method"] == "beam_search":
+            x_samples = beam_search(model_yx.decoder,
+                                    model_yx.emb_tgt,
+                                    model_yx.generate_tm,
+                                    enc_output,
+                                    dec_hidden,
+                                    y_mask,
+                                    vocab_src.size(),
+                                    vocab_src[SOS_TOKEN],
+                                    vocab_src[EOS_TOKEN],
+                                    vocab_src[PAD_TOKEN],
+                                    config,
+                                    beam_width=config["decoding_beam_width"])
+        else:
+            greedy = False if config["decoding_method"] == "ancestral" else True
+            x_samples = ancestral_sample(model_yx.decoder,
+                                         model_yx.emb_tgt,
+                                         model_yx.generate_tm,
+                                         enc_output,
+                                         dec_hidden,
+                                         y_mask,
+                                         vocab_src[SOS_TOKEN],
+                                         vocab_src[EOS_TOKEN],
+                                         vocab_src[PAD_TOKEN],
+                                         config,
+                                         greedy=greedy)
         x_samples = batch_to_sentences(x_samples, vocab_src)
         x_in, x_out, x_mask, x_len = create_batch(x_samples, vocab_src, device)
         x_mask = x_mask.unsqueeze(1)
