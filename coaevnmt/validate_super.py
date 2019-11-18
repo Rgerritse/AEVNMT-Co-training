@@ -14,21 +14,48 @@ import numpy as np
 
 def main():
     config = setup_config()
-    config["dev_prefix"] = "dev"
+    # config["dev_prefix"] = "dev"
     # config["dev_prefix"] = "comparable"
     # config["dev_prefix"] = "test_2016_flickr.lc.norm.tok"
-    # config["dev_prefix"] = "test_2017_flickr.lc.norm.tok"
+    config["dev_prefix"] = "test_2017_flickr.lc.norm.tok"
     vocab_src, vocab_tgt = load_vocabularies(config)
     _, dev_data, _ = load_data(config, vocab_src=vocab_src, vocab_tgt=vocab_tgt)
 
     model, _, validate_fn = create_model(vocab_src, vocab_tgt, config)
     model.to(torch.device(config["device"]))
 
+    # checkpoint_path = "output/cond_nmt_back_en-de_run_0/checkpoints/cond_nmt_back_en-de_run_0"
+    # checkpoint_path = "output/cond_nmt_en-de_run_3/checkpoints/cond_nmt_en-de_run_3"
+    # checkpoint_path = "output/cond_nmt_de-en_run_3/checkpoints/cond_nmt_de-en_run_3"
+    # checkpoint_path = "output/cond_half_en-de_run_3/checkpoints/cond_half_en-de_run_3"
+    # checkpoint_path = "output/cond_half_de-en_run_3/checkpoints/cond_half_de-en_run_3"
+    # checkpoint_path = "output/cond_fourth_en-de_run_3/checkpoints/cond_fourth_en-de_run_3"
+    # checkpoint_path = "output/cond_fourth_de-en_run_3/checkpoints/cond_fourth_de-en_run_3"
     # checkpoint_path = "output/cond_nmt_back_en-de_run_4/checkpoints/cond_nmt_back_en-de_run_4"
-    # checkpoint_path = "output/cond_nmt_de-en_run_7/checkpoints/cond_nmt_de-en_run_7"
-    # checkpoint_path = "output/cond_nmt_back_de-en_run_0/checkpoints/cond_nmt_back_de-en_run_0"
+
+
+    # checkpoint_path = "output/aevnmt_final_fourth_en-de_run_3/checkpoints/aevnmt_final_fourth_en-de_run_3"
+    # checkpoint_path = "output/aevnmt_final_fourth_de-en_run_3/checkpoints/aevnmt_final_fourth_de-en_run_3"
+
+    # checkpoint_path = "output/aevnmt_final_half_en-de_run_3/checkpoints/aevnmt_final_half_en-de_run_3"
+    # checkpoint_path = "output/aevnmt_final_half_de-en_run_3/checkpoints/aevnmt_final_half_de-en_run_3"
+    # checkpoint_path = "output/aevnmt_z_to_pre_output_de-en_run_3/checkpoints/aevnmt_z_to_pre_output_de-en_run_3"
+
+    # checkpoint_path = "output/cond_back_balanced_half_de-en_run_0/checkpoints/cond_back_balanced_half_de-en_run_0"
+    # checkpoint_path = "output/cond_back_balanced_half_en-de_run_3/checkpoints/cond_back_balanced_half_en-de_run_3"
+
+
+    # checkpoint_path = "output/cond_back_balanced_fourth_en-de_run_3/checkpoints/cond_back_balanced_fourth_en-de_run_3"
+    checkpoint_path = "output/cond_back_balanced_fourth_de-en_run_3/checkpoints/cond_back_balanced_fourth_de-en_run_3"
+
+
+    # checkpoint_path = "output/cond_back_balanced_de-en_run_3/checkpoints/cond_back_balanced_de-en_run_3"
     # checkpoint_path = "output/cond_back_balanced_fourth_en-de_run_0/checkpoints/cond_back_balanced_fourth_en-de_run_0"
-    checkpoint_path = "output/aevnmt_de-en_run_7/checkpoints/aevnmt_de-en_run_7"
+    # checkpoint_path = "output/aevnmt_z_maxhid_en-de_run_0/checkpoints/aevnmt_z_maxhid_en-de_run_0"
+    # checkpoint_path = "output/conmt_greedy_2en-de_run_0/checkpoints/conmt_greedy_2en-de_run_0"
+    # checkpoint_path = "output/aevnmt_def_en-de_run_3/checkpoints/aevnmt_def_en-de_run_3"
+    # checkpoint_path = "output/aevnmt_z_maxhid_de-en_run_3/checkpoints/aevnmt_z_maxhid_de-en_run_3"
+    # checkpoint_path = "output/aevnmt_de-en_run_7/checkpoints/aevnmt_de-en_run_7"
     # checkpoint_path = "output/aevnmt_de-en_run_4/checkpoints/aevnmt_de-en_run_4"
 
     state = torch.load(checkpoint_path)
@@ -67,7 +94,7 @@ def main():
                 raw_hypothesis = beam_search(model.decoder, model.emb_tgt,
                     model.generate_tm, enc_output, dec_hidden, x_mask, vocab_tgt.size(),
                     vocab_tgt[SOS_TOKEN], vocab_tgt[EOS_TOKEN],
-                    vocab_tgt[PAD_TOKEN], config)
+                    vocab_tgt[PAD_TOKEN], config, z=z)
             else:
                 enc_output, enc_hidden = model.encode(x_in, x_len)
                 dec_hidden = model.decoder.initialize(enc_output, enc_hidden)

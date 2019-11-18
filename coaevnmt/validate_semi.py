@@ -47,14 +47,19 @@ def evaluate(model, dev_data, vocab_src, vocab_tgt, config, direction=None):
 
                 enc_output, enc_hidden = model.encode(x_in, x_len, z)
                 dec_hidden = model.init_decoder(enc_output, enc_hidden, z)
+
+                raw_hypothesis = beam_search(model.decoder, model.emb_tgt,
+                    model.generate_tm, enc_output, dec_hidden, x_mask, vocab_tgt.size(),
+                    vocab_tgt[SOS_TOKEN], vocab_tgt[EOS_TOKEN],
+                    vocab_tgt[PAD_TOKEN], config, z=z)
             elif config["model_type"] == "conmt":
                 enc_output, enc_hidden = model.encode(x_in, x_len)
                 dec_hidden = model.decoder.initialize(enc_output, enc_hidden)
 
-            raw_hypothesis = beam_search(model.decoder, model.emb_tgt,
-                model.generate_tm, enc_output, dec_hidden, x_mask, vocab_tgt.size(),
-                vocab_tgt[SOS_TOKEN], vocab_tgt[EOS_TOKEN],
-                vocab_tgt[PAD_TOKEN], config)
+                raw_hypothesis = beam_search(model.decoder, model.emb_tgt,
+                    model.generate_tm, enc_output, dec_hidden, x_mask, vocab_tgt.size(),
+                    vocab_tgt[SOS_TOKEN], vocab_tgt[EOS_TOKEN],
+                    vocab_tgt[PAD_TOKEN], config)
 
             hypothesis = batch_to_sentences(raw_hypothesis, vocab_tgt)
             inverse_sort_keys = np.argsort(sort_keys)
@@ -87,14 +92,21 @@ def main():
     # checkpoint_path = "output/coaevnmt_lr3_no_curriculum_no_warmup_en-de_run_4/checkpoints/coaevnmt_lr3_no_curriculum_no_warmup_en-de_run_4"
     # checkpoint_path = "output/coaevnmt_lr3_beam_dec_3_en-de_run_3/checkpoints/coaevnmt_lr3_beam_dec_3_en-de_run_3"
     # checkpoint_path = "output/conmt_anc_en-de_run_3/checkpoints/conmt_anc_en-de_run_3"
-    # checkpoint_path = "output/conmt_greedy_en-de_run_3/checkpoints/conmt_greedy_en-de_run_3"
-    # checkpoint_path = "output/conmt_beam_dec_3_2en-de_run_3/checkpoints/conmt_beam_dec_3_2en-de_run_3"
+    # checkpoint_path = "output/conmt_greedy_2en-de_run_3/checkpoints/conmt_greedy_2en-de_run_3"
+
+    # checkpoint_path = "output/conmt_greedy_no_warmup_en-de_run_3/checkpoints/conmt_greedy_no_warmup_en-de_run_3"
+    # checkpoint_path = "output/conmt_beam_dec_3_2en-de_run_1/checkpoints/conmt_beam_dec_3_2en-de_run_1"
     # checkpoint_path = "output/conmt_beam_dec_5_2en-de_run_3/checkpoints/conmt_beam_dec_5_2en-de_run_3"
-    checkpoint_path = "output/conmt_beam_dec_10_2en-de_run_3/checkpoints/conmt_beam_dec_10_2en-de_run_3"
+    # checkpoint_path = "output/conmt_beam_dec_10_2en-de_run_3/checkpoints/conmt_beam_dec_10_2en-de_run_3"
     # checkpoint_path = "output/conmt_beam_dec_10_en-de_run_3/checkpoints/conmt_beam_dec_10_en-de_run_3"
     # checkpoint_path = "output/conmt_curc_diff_greedy_conv_yx_en-de_run_7/checkpoints/conmt_curc_diff_greedy_conv_yx_en-de_run_7"
+    # checkpoint_path = "output/conmt_final_full_en-de_run_3/checkpoints/conmt_final_full_en-de_run_3"
+    # checkpoint_path = "output/conmt_final_half_en-de_run_3/checkpoints/conmt_final_half_en-de_run_3"
+    # checkpoint_path = "output/conmt_final_fourth_en-de_run_3/checkpoints/conmt_final_fourth_en-de_run_3"
 
-
+    # checkpoint_path = "output/coaevnmt_final_full_en-de_run_3/checkpoints/coaevnmt_final_full_en-de_run_3"
+    # checkpoint_path = "output/coaevnmt_final_half_en-de_run_3/checkpoints/coaevnmt_final_half_en-de_run_3"
+    checkpoint_path = "output/coaevnmt_final_fourth_en-de_run_3/checkpoints/coaevnmt_final_fourth_en-de_run_3"
 
     state = torch.load(checkpoint_path)
     model_xy.load_state_dict(state['state_dict_xy'])

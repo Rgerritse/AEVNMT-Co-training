@@ -21,7 +21,7 @@ def bi_train_fn(model_xy, model_yx, x_in, x_noisy_in, x_out, x_len, x_mask, y_in
 
     loss = loss_xy + loss_yx
     return loss
-    
+
 def mono_train_fn(model_xy, model_yx, y_in, y_noisy_in, y_len, y_mask, y_out, vocab_src, config, step):
     device = torch.device("cpu") if config["device"] == "cpu" else torch.device("cuda:0")
     with torch.no_grad():

@@ -52,7 +52,8 @@ def mono_train_fn(model_xy, model_yx, y_in, y_noisy_in, y_len, y_mask, y_out, vo
                                     vocab_src[EOS_TOKEN],
                                     vocab_src[PAD_TOKEN],
                                     config,
-                                    beam_width=config["decoding_beam_width"])
+                                    beam_width=config["decoding_beam_width"],
+                                    z=z_y)
         else:
             greedy = False if config["decoding_method"] == "ancestral" else True
             x_samples = ancestral_sample(model_yx.decoder,
@@ -65,7 +66,8 @@ def mono_train_fn(model_xy, model_yx, y_in, y_noisy_in, y_len, y_mask, y_out, vo
                                          vocab_src[EOS_TOKEN],
                                          vocab_src[PAD_TOKEN],
                                          config,
-                                         greedy=greedy)
+                                         greedy=greedy,
+                                         z=z_y)
         x_samples = batch_to_sentences(x_samples, vocab_src)
         x_in, x_out, x_mask, x_len, x_noisy_in = create_noisy_batch(
             x_samples, vocab_src, device, word_dropout=config["word_dropout"])
@@ -73,7 +75,7 @@ def mono_train_fn(model_xy, model_yx, y_in, y_noisy_in, y_len, y_mask, y_out, vo
 
     qz_x = model_xy.inference(x_in, x_mask, x_len)
     z_x = qz_x.rsample()
-    tm_logits, lm_logits = model_xy(x_noisy_in, x_len, x_mask, y_noisy_in, z_x)
+    tm_logits, lm_logits, _, _ = model_xy(x_noisy_in, x_len, x_mask, y_noisy_in, z_x)
 
-    loss = model_xy.loss(tm_logits, lm_logits, y_out, x_out, qz_x, step)
+    loss = model_xy.loss(tm_logits, lm_logits, None, None, y_out, x_out, qz_x, step)
     return loss
